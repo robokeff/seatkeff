@@ -63,4 +63,5 @@ export interface AppState {
   showWelcome: boolean;
   isCloudEnabled?: boolean;
   isApiEnabled?: boolean;
+  lastUpdated?: string; // ISO string of last sync
 }

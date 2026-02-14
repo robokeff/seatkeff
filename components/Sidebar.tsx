@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, LayoutGrid, Calendar, LogOut, Heart, Map as MapIcon, RefreshCw, ShieldCheck, Cloud, CloudUpload, DownloadCloud, Info, Settings, CheckCircle2, AlertTriangle, FileJson, Server } from 'lucide-react';
+import { Users, LayoutGrid, Calendar, LogOut, Heart, Map as MapIcon, RefreshCw, ShieldCheck, Cloud, CloudUpload, DownloadCloud, Info, Settings, CheckCircle2, AlertTriangle, FileJson, Server, Clock } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: 'dashboard' | 'guests' | 'tables' | 'layout' | 'admin' | 'settings';
@@ -13,9 +13,10 @@ interface SidebarProps {
   isAdmin?: boolean;
   isSaving?: boolean;
   cloudStatus?: 'offline' | 'connecting' | 'online' | 'api';
+  lastUpdated?: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, hasActiveEvent, currentEventName, onExitEvent, onLogout, username, isAdmin, isSaving, cloudStatus }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, hasActiveEvent, currentEventName, onExitEvent, onLogout, username, isAdmin, isSaving, cloudStatus, lastUpdated }) => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
@@ -26,15 +27,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, hasActiveEve
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-    }
-  };
 
   const getStatusText = () => {
     if (cloudStatus === 'online') return 'מחובר ל-Firebase';
@@ -64,13 +56,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, hasActiveEve
           </div>
         </div>
         
-        <div className="mt-4 px-1 flex flex-col gap-2">
+        <div className="mt-4 px-1 flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${cloudStatus !== 'offline' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-400'}`}></div>
-            <span className="text-[10px] font-black text-indigo-200 uppercase tracking-widest flex items-center gap-1">
+            <span className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">
               {getStatusText()}
             </span>
           </div>
+          {lastUpdated && (
+             <div className="flex items-center gap-1.5 text-[9px] text-indigo-400 font-bold">
+                <Clock size={10} />
+                סנכרון אחרון: {new Date(lastUpdated).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+             </div>
+          )}
         </div>
       </div>
 

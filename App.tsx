@@ -8,7 +8,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import AuthScreen from './components/AuthScreen';
 import AdminPanel from './components/AdminPanel';
 import GuestRSVP from './components/GuestRSVP';
-import { Calendar, MapPin, ChevronLeft, CheckCircle2, Cloud, CloudOff, CloudCheck, Server } from 'lucide-react';
+import { Calendar, MapPin, ChevronLeft, CheckCircle2, Cloud, CloudOff, CloudCheck, Server, Clock } from 'lucide-react';
 
 // Firebase Imports
 import { initializeApp, getApps } from 'firebase/app';
@@ -51,7 +51,6 @@ const App: React.FC = () => {
   const dbRef = useRef<any>(null);
   const apiConfigRef = useRef<CustomApiConfig | null>(null);
 
-  // FIX: Extract RSVP and Import data from URL to fix "Cannot find name 'rsvpEventId'"
   const urlParams = new URLSearchParams(window.location.search);
   const rsvpEventId = urlParams.get('eid');
   const importDataEncoded = urlParams.get('import');
@@ -108,7 +107,6 @@ const App: React.FC = () => {
           if (userData) {
             setUserIsAdmin(!!userData.isAdmin);
             
-            // Priority 1: Custom API (Neon)
             if (userData.apiConfig) {
               apiConfigRef.current = userData.apiConfig;
               setCloudStatus('api');
@@ -119,7 +117,7 @@ const App: React.FC = () => {
                 if (res.ok) {
                   const cloudData = await res.json();
                   setEvents(cloudData.events || []);
-                  setState(prev => ({ ...prev, isApiEnabled: true }));
+                  setState(prev => ({ ...prev, isApiEnabled: true, lastUpdated: new Date().toISOString() }));
                   dataLoadedForUser.current = state.currentUser;
                   setIsLoaded(true);
                   return;
@@ -127,7 +125,6 @@ const App: React.FC = () => {
               } catch (e) { console.debug("Custom API load failed, fallback to local"); }
             }
 
-            // Priority 2: Firebase
             if (userData.cloudConfig) {
               const connected = await initFirebase(userData.cloudConfig);
               if (connected && dbRef.current) {
@@ -136,7 +133,7 @@ const App: React.FC = () => {
                 if (docSnap.exists()) {
                   const cloudData = docSnap.data();
                   setEvents(cloudData.events || []);
-                  setState(prev => ({ ...prev, isCloudEnabled: true }));
+                  setState(prev => ({ ...prev, isCloudEnabled: true, lastUpdated: cloudData.lastUpdated || new Date().toISOString() }));
                   dataLoadedForUser.current = state.currentUser;
                   setIsLoaded(true);
                   return;
@@ -144,12 +141,12 @@ const App: React.FC = () => {
               }
             }
             
-            // Fallback: Local Data
             setEvents(userData.events || []);
             setState(prev => ({ 
               ...prev, 
               isCloudEnabled: !!userData.cloudConfig,
-              isApiEnabled: !!userData.apiConfig 
+              isApiEnabled: !!userData.apiConfig,
+              lastUpdated: new Date().toISOString()
             }));
           } else {
             setEvents([]);
@@ -165,11 +162,9 @@ const App: React.FC = () => {
     }
   }, [state.currentUser, isLoaded, initFirebase]);
 
-  // FIX: Handle data import from RSVP links when the host is logged in
   useEffect(() => {
     if (isLoaded && state.currentUser && importDataEncoded && rsvpEventId) {
       try {
-        // Decode base64 (handling Hebrew/Unicode)
         const decodedString = decodeURIComponent(atob(importDataEncoded).split('').map(c => 
           '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
         ).join(''));
@@ -187,10 +182,8 @@ const App: React.FC = () => {
               guests: [...eventToUpdate.guests, { ...guestToImport, id: generateId() }]
             };
             setEvents(prev => prev.map(e => e.id === rsvpEventId ? updatedEvent : e));
-            alert(`אורח חדש נוסף: ${guestToImport.name}`);
+            alert(`אורח חדש נוסף: ${guestToImport.name}. נא לאשר אותו ברשימה.`);
           }
-          
-          // Clear URL params to prevent repeated imports
           window.history.replaceState({}, document.title, window.location.pathname);
         }
       } catch (e) {
@@ -206,8 +199,10 @@ const App: React.FC = () => {
 
     const saveChanges = async () => {
       setIsSaving(true);
+      const now = new Date().toISOString();
       try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
+        setState(prev => ({ ...prev, lastUpdated: now }));
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...state, lastUpdated: now }));
         localStorage.setItem(LAST_USER_KEY, state.currentUser!);
         
         const usersRaw = localStorage.getItem(USERS_DB_KEY);
@@ -217,7 +212,6 @@ const App: React.FC = () => {
           users[state.currentUser!].events = events;
           localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
           
-          // Save to Custom API (Neon)
           if (state.isApiEnabled && apiConfigRef.current) {
              await fetch(`${apiConfigRef.current.baseUrl}/save`, {
                method: 'POST',
@@ -225,16 +219,15 @@ const App: React.FC = () => {
                  'Content-Type': 'application/json',
                  'Authorization': `Bearer ${apiConfigRef.current.apiKey || ''}`
                },
-               body: JSON.stringify({ events, lastUpdated: new Date().toISOString() })
+               body: JSON.stringify({ events, lastUpdated: now })
              });
           }
 
-          // Save to Firebase
           if (state.isCloudEnabled && dbRef.current) {
             const docRef = doc(dbRef.current, 'users', state.currentUser!);
             await setDoc(docRef, {
               events: events,
-              lastUpdated: new Date().toISOString()
+              lastUpdated: now
             }, { merge: true });
           }
         }
@@ -244,12 +237,10 @@ const App: React.FC = () => {
       setTimeout(() => setIsSaving(false), 800);
     };
 
-    const timer = setTimeout(saveChanges, 1000);
+    const timer = setTimeout(saveChanges, 1500);
     return () => clearTimeout(timer);
-  }, [events, state, isLoaded]);
+  }, [events, state.currentUser, isLoaded]);
 
-  // FIX: Render RSVP screen if requested and user is not logged in (guest mode). 
-  // If host is logged in, we stay in dashboard/editor to handle management or import.
   if (rsvpEventId && !state.currentUser && !importDataEncoded) {
     const currentEventForRSVP = events.find(e => e.id === rsvpEventId);
     return <GuestRSVP eventId={rsvpEventId} event={currentEventForRSVP || undefined} />;
@@ -305,6 +296,7 @@ const App: React.FC = () => {
         onExitEvent={() => { setState(prev => ({ ...prev, currentEventId: null })); setActiveTab('dashboard'); }}
         onLogout={handleLogout} username={state.currentUser} isAdmin={userIsAdmin} isSaving={isSaving}
         cloudStatus={cloudStatus}
+        lastUpdated={state.lastUpdated}
       />
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {currentEvent && activeTab !== 'dashboard' && activeTab !== 'admin' && (
@@ -320,14 +312,14 @@ const App: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center gap-4">
-               {cloudStatus !== 'offline' && (
-                 <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black border border-green-100">
-                    <Cloud size={14} className="animate-pulse" />
-                    סנכרון {cloudStatus === 'api' ? 'Neon/API' : 'ענן'} פעיל
+               {cloudStatus !== 'offline' && state.lastUpdated && (
+                 <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black border border-indigo-100">
+                    <Clock size={12} />
+                    עודכן: {new Date(state.lastUpdated).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
                  </div>
                )}
                <div className={`flex items-center gap-2 font-black text-[10px] transition-all duration-500 ${isSaving ? 'text-amber-500 scale-110' : 'text-green-500 opacity-60'}`}>
-                {isSaving ? <><CheckCircle2 size={14} className="animate-spin" /> שומר שינויים...</> : <><CheckCircle2 size={14} /> נשמר בהצלחה</>}
+                {isSaving ? <><CheckCircle2 size={14} className="animate-spin" /> שומר...</> : <><CheckCircle2 size={14} /> סונכרן</>}
               </div>
             </div>
           </header>

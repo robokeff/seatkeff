@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Guest, GuestCategory, Table } from '../types';
-import { Plus, UserPlus, Search, Trash2, CheckCircle2, User, Users, Baby, Scissors, X, MessageCircle, Share2, Link as LinkIcon, Clock, Filter, Palette } from 'lucide-react';
+import { Plus, UserPlus, Search, Trash2, CheckCircle2, User, Users, Baby, Scissors, X, MessageCircle, Share2, Link as LinkIcon, Clock, Filter, Palette, AlertCircle } from 'lucide-react';
 
 interface GuestListProps {
   eventId: string;
@@ -76,6 +76,7 @@ const GuestList: React.FC<GuestListProps> = ({
 
   const totalInvited = guests.reduce((sum, g) => sum + g.adults + g.children, 0);
   const confirmedCount = guests.filter(g => g.confirmed).reduce((sum, g) => sum + g.adults + g.children, 0);
+  const pendingCount = guests.filter(g => !g.confirmed).length;
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,9 +124,12 @@ const GuestList: React.FC<GuestListProps> = ({
           <div className={`p-4 rounded-2xl ${confirmedCount > 0 ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-300'}`}><CheckCircle2 size={28} /></div>
           <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">מאושרים</p><p className="text-3xl font-black text-green-600">{confirmedCount}</p></div>
         </div>
-        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex items-center gap-4">
-          <div className="p-4 bg-amber-50 text-amber-600 rounded-2xl"><Clock size={28} /></div>
-          <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">ממתינים לאישור</p><p className="text-3xl font-black text-amber-600">{guests.filter(g => !g.confirmed).reduce((sum, g) => sum + g.adults + g.children, 0)}</p></div>
+        <div onClick={() => setStatusTab('PENDING')} className={`cursor-pointer bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex items-center gap-4 hover:border-amber-200 transition-all ${statusTab === 'PENDING' ? 'ring-2 ring-amber-400' : ''}`}>
+          <div className={`p-4 rounded-2xl ${pendingCount > 0 ? 'bg-amber-50 text-amber-600' : 'bg-gray-50 text-gray-300'}`}><Clock size={28} /></div>
+          <div>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">ממתינים לאישור</p>
+            <p className="text-3xl font-black text-amber-600">{pendingCount}</p>
+          </div>
         </div>
       </div>
 
@@ -170,32 +174,37 @@ const GuestList: React.FC<GuestListProps> = ({
               <div className="flex items-center gap-1 p-1 bg-gray-50 rounded-2xl w-full md:w-auto">
                 <button onClick={() => setStatusTab('ALL')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${statusTab === 'ALL' ? 'bg-white shadow-md text-indigo-600' : 'text-gray-400'}`}>הכל</button>
                 <button onClick={() => setStatusTab('CONFIRMED')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${statusTab === 'CONFIRMED' ? 'bg-white shadow-md text-green-600' : 'text-gray-400'}`}>מאושרים</button>
-                <button onClick={() => setStatusTab('PENDING')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${statusTab === 'PENDING' ? 'bg-white shadow-md text-amber-600' : 'text-gray-400'}`}>ממתינים</button>
+                <button onClick={() => setStatusTab('PENDING')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${statusTab === 'PENDING' ? 'bg-white shadow-md text-amber-600' : 'text-gray-400'}`}>
+                  ממתינים {pendingCount > 0 && <span className="mr-1.5 px-1.5 py-0.5 bg-amber-500 text-white rounded-full text-[8px] animate-pulse">{pendingCount}</span>}
+                </button>
               </div>
-              <input type="text" placeholder="חיפוש לפי שם או טלפון..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full md:w-64 px-5 py-3.5 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" />
+              <div className="relative w-full md:w-64">
+                <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+                <input type="text" placeholder="חיפוש לפי שם..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pr-10 pl-5 py-3.5 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" />
+              </div>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-right text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100 text-gray-400 font-black text-[10px] uppercase">
-                    <th className="px-6 py-5">שם וצבע</th>
+                    <th className="px-6 py-5">מוזמן</th>
                     <th className="px-6 py-5">קטגוריה</th>
                     <th className="px-6 py-5 text-center">נפשות</th>
                     <th className="px-6 py-5">שולחן</th>
-                    <th className="px-6 py-5 text-center">אישור הגעה</th>
+                    <th className="px-6 py-5 text-center">סטטוס אישור</th>
                     <th className="px-6 py-5 text-left">פעולות</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {filteredGuests.map((guest) => (
-                    <tr key={guest.id} className="hover:bg-gray-50/50 group transition-colors">
+                    <tr key={guest.id} className={`hover:bg-gray-50/50 group transition-colors ${!guest.confirmed ? 'bg-amber-50/20' : ''}`}>
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-3">
                           <div className="w-3 h-3 rounded-full shadow-sm shrink-0" style={{ backgroundColor: guest.color || '#cbd5e1' }} />
                           <div className="flex flex-col">
                             <span className="font-black text-indigo-950">{guest.name}</span>
-                            {guest.phone && <span className="text-[10px] text-gray-400">{guest.phone}</span>}
+                            {guest.phone && <span className="text-[10px] text-gray-400 font-bold">{guest.phone}</span>}
                           </div>
                         </div>
                       </td>
@@ -209,9 +218,13 @@ const GuestList: React.FC<GuestListProps> = ({
                       <td className="px-6 py-5 text-center">
                         <button 
                           onClick={() => onUpdateGuest(guest.id, { confirmed: !guest.confirmed })}
-                          className={`p-2.5 rounded-full transition-all ${guest.confirmed ? 'bg-green-100 text-green-600 scale-110 shadow-sm' : 'bg-gray-50 text-gray-300 hover:text-indigo-400'}`}
+                          className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl font-black text-[10px] transition-all border-2 ${guest.confirmed ? 'bg-green-50 text-green-600 border-green-100' : 'bg-white text-amber-500 border-amber-100 hover:border-amber-400'}`}
                         >
-                          <CheckCircle2 size={24} />
+                          {guest.confirmed ? (
+                            <><CheckCircle2 size={16} /> מאושר</>
+                          ) : (
+                            <><AlertCircle size={16} /> לחץ לאישור</>
+                          )}
                         </button>
                       </td>
                       <td className="px-6 py-5 text-left">
@@ -232,7 +245,7 @@ const GuestList: React.FC<GuestListProps> = ({
               </table>
               {filteredGuests.length === 0 && (
                 <div className="py-20 text-center">
-                  <p className="text-gray-300 font-bold">לא נמצאו אורחים התואמים לחיפוש</p>
+                  <p className="text-gray-300 font-bold">לא נמצאו אורחים מתאימים</p>
                 </div>
               )}
             </div>
