@@ -43,12 +43,18 @@ export interface FirebaseConfig {
   appId: string;
 }
 
+export interface CustomApiConfig {
+  baseUrl: string;
+  apiKey?: string;
+}
+
 export interface UserAccount {
   username: string;
   password?: string;
   events: EventData[];
   isAdmin?: boolean;
   cloudConfig?: FirebaseConfig;
+  apiConfig?: CustomApiConfig;
 }
 
 export interface AppState {
@@ -56,4 +62,5 @@ export interface AppState {
   currentEventId: string | null;
   showWelcome: boolean;
   isCloudEnabled?: boolean;
+  isApiEnabled?: boolean;
 }

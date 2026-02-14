@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { EventData, AppState, UserAccount, Guest, FirebaseConfig } from './types';
+import { EventData, AppState, UserAccount, Guest, FirebaseConfig, CustomApiConfig } from './types';
 import EventDashboard from './components/EventDashboard';
 import EventEditor from './components/EventEditor';
 import Sidebar from './components/Sidebar';
@@ -8,7 +8,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import AuthScreen from './components/AuthScreen';
 import AdminPanel from './components/AdminPanel';
 import GuestRSVP from './components/GuestRSVP';
-import { Calendar, MapPin, ChevronLeft, CheckCircle2, Cloud, CloudOff, CloudCheck } from 'lucide-react';
+import { Calendar, MapPin, ChevronLeft, CheckCircle2, Cloud, CloudOff, CloudCheck, Server } from 'lucide-react';
 
 // Firebase Imports
 import { initializeApp, getApps } from 'firebase/app';
@@ -45,15 +45,17 @@ const App: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'guests' | 'tables' | 'layout' | 'admin' | 'settings'>('dashboard');
-  const [cloudStatus, setCloudStatus] = useState<'offline' | 'connecting' | 'online'>('offline');
+  const [cloudStatus, setCloudStatus] = useState<'offline' | 'connecting' | 'online' | 'api'>('offline');
   
   const dataLoadedForUser = useRef<string | null>(null);
   const dbRef = useRef<any>(null);
+  const apiConfigRef = useRef<CustomApiConfig | null>(null);
 
+  // FIX: Extract RSVP and Import data from URL to fix "Cannot find name 'rsvpEventId'"
   const urlParams = new URLSearchParams(window.location.search);
-  const rsvpEventId = urlParams.get('rsvp');
+  const rsvpEventId = urlParams.get('eid');
+  const importDataEncoded = urlParams.get('import');
 
-  // Initialize Firebase if config exists
   const initFirebase = useCallback(async (config: FirebaseConfig) => {
     try {
       setCloudStatus('connecting');
@@ -89,7 +91,6 @@ const App: React.FC = () => {
     dbRef.current = null;
   };
 
-  // Load Data Effect (Local + Cloud)
   useEffect(() => {
     if (state.currentUser && !isLoaded) {
       const loadData = async () => {
@@ -107,7 +108,26 @@ const App: React.FC = () => {
           if (userData) {
             setUserIsAdmin(!!userData.isAdmin);
             
-            // Priority: Cloud Data
+            // Priority 1: Custom API (Neon)
+            if (userData.apiConfig) {
+              apiConfigRef.current = userData.apiConfig;
+              setCloudStatus('api');
+              try {
+                const res = await fetch(`${userData.apiConfig.baseUrl}/data`, {
+                  headers: { 'Authorization': `Bearer ${userData.apiConfig.apiKey || ''}` }
+                });
+                if (res.ok) {
+                  const cloudData = await res.json();
+                  setEvents(cloudData.events || []);
+                  setState(prev => ({ ...prev, isApiEnabled: true }));
+                  dataLoadedForUser.current = state.currentUser;
+                  setIsLoaded(true);
+                  return;
+                }
+              } catch (e) { console.debug("Custom API load failed, fallback to local"); }
+            }
+
+            // Priority 2: Firebase
             if (userData.cloudConfig) {
               const connected = await initFirebase(userData.cloudConfig);
               if (connected && dbRef.current) {
@@ -126,7 +146,11 @@ const App: React.FC = () => {
             
             // Fallback: Local Data
             setEvents(userData.events || []);
-            setState(prev => ({ ...prev, isCloudEnabled: !!userData.cloudConfig }));
+            setState(prev => ({ 
+              ...prev, 
+              isCloudEnabled: !!userData.cloudConfig,
+              isApiEnabled: !!userData.apiConfig 
+            }));
           } else {
             setEvents([]);
           }
@@ -141,7 +165,40 @@ const App: React.FC = () => {
     }
   }, [state.currentUser, isLoaded, initFirebase]);
 
-  // Save Data Effect (Local + Cloud)
+  // FIX: Handle data import from RSVP links when the host is logged in
+  useEffect(() => {
+    if (isLoaded && state.currentUser && importDataEncoded && rsvpEventId) {
+      try {
+        // Decode base64 (handling Hebrew/Unicode)
+        const decodedString = decodeURIComponent(atob(importDataEncoded).split('').map(c => 
+          '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+        ).join(''));
+        const guestToImport = JSON.parse(decodedString);
+        
+        const eventToUpdate = events.find(e => e.id === rsvpEventId);
+        if (eventToUpdate) {
+          const alreadyExists = eventToUpdate.guests.some(g => 
+            g.name === guestToImport.name && g.phone === guestToImport.phone
+          );
+          
+          if (!alreadyExists) {
+            const updatedEvent = {
+              ...eventToUpdate,
+              guests: [...eventToUpdate.guests, { ...guestToImport, id: generateId() }]
+            };
+            setEvents(prev => prev.map(e => e.id === rsvpEventId ? updatedEvent : e));
+            alert(`אורח חדש נוסף: ${guestToImport.name}`);
+          }
+          
+          // Clear URL params to prevent repeated imports
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } catch (e) {
+        console.error("Import failed", e);
+      }
+    }
+  }, [isLoaded, state.currentUser, importDataEncoded, rsvpEventId, events]);
+
   useEffect(() => {
     if (!isLoaded || !state.currentUser || dataLoadedForUser.current !== state.currentUser) {
       return; 
@@ -150,7 +207,6 @@ const App: React.FC = () => {
     const saveChanges = async () => {
       setIsSaving(true);
       try {
-        // 1. Save locally for PWA/Offline support
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
         localStorage.setItem(LAST_USER_KEY, state.currentUser!);
         
@@ -161,7 +217,19 @@ const App: React.FC = () => {
           users[state.currentUser!].events = events;
           localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
           
-          // 2. Save to Cloud if enabled
+          // Save to Custom API (Neon)
+          if (state.isApiEnabled && apiConfigRef.current) {
+             await fetch(`${apiConfigRef.current.baseUrl}/save`, {
+               method: 'POST',
+               headers: { 
+                 'Content-Type': 'application/json',
+                 'Authorization': `Bearer ${apiConfigRef.current.apiKey || ''}`
+               },
+               body: JSON.stringify({ events, lastUpdated: new Date().toISOString() })
+             });
+          }
+
+          // Save to Firebase
           if (state.isCloudEnabled && dbRef.current) {
             const docRef = doc(dbRef.current, 'users', state.currentUser!);
             await setDoc(docRef, {
@@ -180,7 +248,9 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [events, state, isLoaded]);
 
-  if (rsvpEventId) {
+  // FIX: Render RSVP screen if requested and user is not logged in (guest mode). 
+  // If host is logged in, we stay in dashboard/editor to handle management or import.
+  if (rsvpEventId && !state.currentUser && !importDataEncoded) {
     const currentEventForRSVP = events.find(e => e.id === rsvpEventId);
     return <GuestRSVP eventId={rsvpEventId} event={currentEventForRSVP || undefined} />;
   }
@@ -250,10 +320,10 @@ const App: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center gap-4">
-               {state.isCloudEnabled && (
+               {cloudStatus !== 'offline' && (
                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black border border-green-100">
                     <Cloud size={14} className="animate-pulse" />
-                    סנכרון ענן פעיל
+                    סנכרון {cloudStatus === 'api' ? 'Neon/API' : 'ענן'} פעיל
                  </div>
                )}
                <div className={`flex items-center gap-2 font-black text-[10px] transition-all duration-500 ${isSaving ? 'text-amber-500 scale-110' : 'text-green-500 opacity-60'}`}>
