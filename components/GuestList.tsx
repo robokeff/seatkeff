@@ -67,10 +67,6 @@ const GuestList: React.FC<GuestListProps> = ({
   const [newChildren, setNewChildren] = useState(0);
   const [newColor, setNewColor] = useState<string | undefined>(undefined);
 
-  const [splitId, setSplitId] = useState<string | null>(null);
-  const [splitAdults, setSplitAdults] = useState(0);
-  const [splitChildren, setSplitChildren] = useState(0);
-
   const filteredGuests = guests.filter(g => {
     const matchesSearch = g.name.toLowerCase().includes(searchTerm.toLowerCase()) || (g.phone && g.phone.includes(searchTerm));
     const matchesCategory = filterCategory === 'ALL' || g.category === filterCategory;
@@ -98,6 +94,23 @@ const GuestList: React.FC<GuestListProps> = ({
     }
   };
 
+  const sendWhatsApp = (guest: Guest) => {
+    if (!guest.phone) {
+      alert('אין מספר טלפון לאורח זה');
+      return;
+    }
+    const tableNum = tables.find(t => t.id === guest.tableId)?.number || 'טרם נקבע';
+    const total = guest.adults + guest.children;
+    const message = (whatsappTemplate || '')
+      .replace(/{name}/g, guest.name)
+      .replace(/{eventName}/g, eventName)
+      .replace(/{venue}/g, eventVenue)
+      .replace(/{table}/g, tableNum.toString())
+      .replace(/{totalSeats}/g, total.toString());
+    
+    window.open(`https://wa.me/${guest.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn">
       {/* Summary Cards */}
@@ -106,8 +119,8 @@ const GuestList: React.FC<GuestListProps> = ({
           <div className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl"><Users size={28} /></div>
           <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">סה"כ מוזמנים</p><p className="text-3xl font-black text-indigo-950">{totalInvited}</p></div>
         </div>
-        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex items-center gap-4">
-          <div className="p-4 bg-green-50 text-green-600 rounded-2xl"><CheckCircle2 size={28} /></div>
+        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex items-center gap-4 transition-all">
+          <div className={`p-4 rounded-2xl ${confirmedCount > 0 ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-300'}`}><CheckCircle2 size={28} /></div>
           <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">מאושרים</p><p className="text-3xl font-black text-green-600">{confirmedCount}</p></div>
         </div>
         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex items-center gap-4">
@@ -157,8 +170,9 @@ const GuestList: React.FC<GuestListProps> = ({
               <div className="flex items-center gap-1 p-1 bg-gray-50 rounded-2xl w-full md:w-auto">
                 <button onClick={() => setStatusTab('ALL')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${statusTab === 'ALL' ? 'bg-white shadow-md text-indigo-600' : 'text-gray-400'}`}>הכל</button>
                 <button onClick={() => setStatusTab('CONFIRMED')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${statusTab === 'CONFIRMED' ? 'bg-white shadow-md text-green-600' : 'text-gray-400'}`}>מאושרים</button>
+                <button onClick={() => setStatusTab('PENDING')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${statusTab === 'PENDING' ? 'bg-white shadow-md text-amber-600' : 'text-gray-400'}`}>ממתינים</button>
               </div>
-              <input type="text" placeholder="חיפוש..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full md:w-64 px-5 py-3.5 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" />
+              <input type="text" placeholder="חיפוש לפי שם או טלפון..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full md:w-64 px-5 py-3.5 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" />
             </div>
 
             <div className="overflow-x-auto">
@@ -169,6 +183,7 @@ const GuestList: React.FC<GuestListProps> = ({
                     <th className="px-6 py-5">קטגוריה</th>
                     <th className="px-6 py-5 text-center">נפשות</th>
                     <th className="px-6 py-5">שולחן</th>
+                    <th className="px-6 py-5 text-center">אישור הגעה</th>
                     <th className="px-6 py-5 text-left">פעולות</th>
                   </tr>
                 </thead>
@@ -177,7 +192,7 @@ const GuestList: React.FC<GuestListProps> = ({
                     <tr key={guest.id} className="hover:bg-gray-50/50 group transition-colors">
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-3">
-                          <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: guest.color || '#cbd5e1' }} />
+                          <div className="w-3 h-3 rounded-full shadow-sm shrink-0" style={{ backgroundColor: guest.color || '#cbd5e1' }} />
                           <div className="flex flex-col">
                             <span className="font-black text-indigo-950">{guest.name}</span>
                             {guest.phone && <span className="text-[10px] text-gray-400">{guest.phone}</span>}
@@ -185,19 +200,41 @@ const GuestList: React.FC<GuestListProps> = ({
                         </div>
                       </td>
                       <td className="px-6 py-5">
-                        <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black ${getCategoryColorClass(guest.category, categories)}`}>{guest.category}</span>
+                        <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black whitespace-nowrap ${getCategoryColorClass(guest.category, categories)}`}>{guest.category}</span>
                       </td>
                       <td className="px-6 py-5 text-center font-black text-indigo-900">{guest.adults + guest.children}</td>
                       <td className="px-6 py-5">
-                        {guest.tableId ? <span className="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black">שולחן {tables.find(t => t.id === guest.tableId)?.number}</span> : <span className="text-gray-300 italic text-[10px]">לא משובץ</span>}
+                        {guest.tableId ? <span className="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black whitespace-nowrap">שולחן {tables.find(t => t.id === guest.tableId)?.number}</span> : <span className="text-gray-300 italic text-[10px]">לא משובץ</span>}
+                      </td>
+                      <td className="px-6 py-5 text-center">
+                        <button 
+                          onClick={() => onUpdateGuest(guest.id, { confirmed: !guest.confirmed })}
+                          className={`p-2.5 rounded-full transition-all ${guest.confirmed ? 'bg-green-100 text-green-600 scale-110 shadow-sm' : 'bg-gray-50 text-gray-300 hover:text-indigo-400'}`}
+                        >
+                          <CheckCircle2 size={24} />
+                        </button>
                       </td>
                       <td className="px-6 py-5 text-left">
-                        <button onClick={() => onRemoveGuest(guest.id)} className="text-gray-200 hover:text-red-500 p-2.5 transition-all opacity-0 group-hover:opacity-100"><Trash2 size={18} /></button>
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {guest.phone && (
+                            <button onClick={() => sendWhatsApp(guest)} className="text-green-500 hover:bg-green-50 p-2.5 rounded-xl transition-all" title="שלח וואטסאפ">
+                              <MessageCircle size={18} />
+                            </button>
+                          )}
+                          <button onClick={() => onRemoveGuest(guest.id)} className="text-gray-200 hover:text-red-500 hover:bg-red-50 p-2.5 rounded-xl transition-all" title="מחק">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {filteredGuests.length === 0 && (
+                <div className="py-20 text-center">
+                  <p className="text-gray-300 font-bold">לא נמצאו אורחים התואמים לחיפוש</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

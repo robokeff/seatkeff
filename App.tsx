@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { EventData, AppState, UserAccount, Guest } from './types';
+import { EventData, AppState, UserAccount, Guest, FirebaseConfig } from './types';
 import EventDashboard from './components/EventDashboard';
 import EventEditor from './components/EventEditor';
 import Sidebar from './components/Sidebar';
@@ -8,11 +8,15 @@ import WelcomeScreen from './components/WelcomeScreen';
 import AuthScreen from './components/AuthScreen';
 import AdminPanel from './components/AdminPanel';
 import GuestRSVP from './components/GuestRSVP';
-import { Calendar, MapPin, ChevronLeft, CheckCircle2 } from 'lucide-react';
+import { Calendar, MapPin, ChevronLeft, CheckCircle2, Cloud, CloudOff, CloudCheck } from 'lucide-react';
 
-const LOCAL_STORAGE_KEY = 'event_seat_pro_config_v2';
-const USERS_DB_KEY = 'users_db_v2';
-const LAST_USER_KEY = 'last_logged_user_v2';
+// Firebase Imports
+import { initializeApp, getApps } from 'firebase/app';
+import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+
+const LOCAL_STORAGE_KEY = 'event_seat_pro_config_v3';
+const USERS_DB_KEY = 'users_db_v3';
+const LAST_USER_KEY = 'last_logged_user_v3';
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -31,9 +35,9 @@ const App: React.FC = () => {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) return JSON.parse(saved);
       const lastUser = localStorage.getItem(LAST_USER_KEY);
-      if (lastUser) return { currentUser: lastUser, currentEventId: null, showWelcome: false };
+      if (lastUser) return { currentUser: lastUser, currentEventId: null, showWelcome: false, isCloudEnabled: false };
     } catch (e) {}
-    return { currentUser: null, currentEventId: null, showWelcome: true };
+    return { currentUser: null, currentEventId: null, showWelcome: true, isCloudEnabled: false };
   });
 
   const [events, setEvents] = useState<EventData[]>([]);
@@ -41,72 +45,112 @@ const App: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'guests' | 'tables' | 'layout' | 'admin' | 'settings'>('dashboard');
+  const [cloudStatus, setCloudStatus] = useState<'offline' | 'connecting' | 'online'>('offline');
   
   const dataLoadedForUser = useRef<string | null>(null);
+  const dbRef = useRef<any>(null);
 
   const urlParams = new URLSearchParams(window.location.search);
   const rsvpEventId = urlParams.get('rsvp');
 
+  // Initialize Firebase if config exists
+  const initFirebase = useCallback(async (config: FirebaseConfig) => {
+    try {
+      setCloudStatus('connecting');
+      const app = getApps().length === 0 ? initializeApp(config) : getApps()[0];
+      dbRef.current = getFirestore(app);
+      setCloudStatus('online');
+      return true;
+    } catch (e) {
+      console.error("Firebase init failed", e);
+      setCloudStatus('offline');
+      return false;
+    }
+  }, []);
+
   const handleLogin = (username: string) => {
     const normalizedUsername = username.trim().toLowerCase();
-    setIsLoaded(false); // Reset loaded state on new user
+    setIsLoaded(false);
+    dataLoadedForUser.current = null;
     setState(prev => ({ ...prev, currentUser: normalizedUsername, showWelcome: false, currentEventId: null }));
     setActiveTab('dashboard');
   };
 
   const handleLogout = () => {
     setIsLoaded(false);
-    setState({ currentUser: null, currentEventId: null, showWelcome: false });
+    dataLoadedForUser.current = null;
+    setState({ currentUser: null, currentEventId: null, showWelcome: false, isCloudEnabled: false });
     localStorage.removeItem(LOCAL_STORAGE_KEY);
     localStorage.removeItem(LAST_USER_KEY);
     setActiveTab('dashboard');
     setEvents([]);
     setUserIsAdmin(false);
-    dataLoadedForUser.current = null;
+    setCloudStatus('offline');
+    dbRef.current = null;
   };
 
-  // Load Data Effect
+  // Load Data Effect (Local + Cloud)
   useEffect(() => {
-    if (state.currentUser) {
-      try {
-        const usersRaw = localStorage.getItem(USERS_DB_KEY);
-        const users = usersRaw ? JSON.parse(usersRaw) : {};
-        let userData = users[state.currentUser];
-        
-        // ADMIN RESCUE LOGIC
-        if (!userData && state.currentUser === ADMIN_EMAIL) {
-          userData = { username: ADMIN_EMAIL, events: [], isAdmin: true, password: '9985' };
-          users[ADMIN_EMAIL] = userData;
-          localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
-        }
+    if (state.currentUser && !isLoaded) {
+      const loadData = async () => {
+        try {
+          const usersRaw = localStorage.getItem(USERS_DB_KEY);
+          const users = usersRaw ? JSON.parse(usersRaw) : {};
+          let userData = users[state.currentUser!];
+          
+          if (!userData && state.currentUser === ADMIN_EMAIL) {
+            userData = { username: ADMIN_EMAIL, events: [], isAdmin: true, password: '9985' };
+            users[ADMIN_EMAIL] = userData;
+            localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
+          }
 
-        if (userData) {
-          setEvents(userData.events || []);
-          setUserIsAdmin(!!userData.isAdmin);
+          if (userData) {
+            setUserIsAdmin(!!userData.isAdmin);
+            
+            // Priority: Cloud Data
+            if (userData.cloudConfig) {
+              const connected = await initFirebase(userData.cloudConfig);
+              if (connected && dbRef.current) {
+                const docRef = doc(dbRef.current, 'users', state.currentUser!);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                  const cloudData = docSnap.data();
+                  setEvents(cloudData.events || []);
+                  setState(prev => ({ ...prev, isCloudEnabled: true }));
+                  dataLoadedForUser.current = state.currentUser;
+                  setIsLoaded(true);
+                  return;
+                }
+              }
+            }
+            
+            // Fallback: Local Data
+            setEvents(userData.events || []);
+            setState(prev => ({ ...prev, isCloudEnabled: !!userData.cloudConfig }));
+          } else {
+            setEvents([]);
+          }
           dataLoadedForUser.current = state.currentUser;
-          setIsLoaded(true); // MARK AS LOADED
-        } else {
-          // If user exists in state but not in DB, it might be a cleared storage
-          setIsLoaded(true); 
+          setIsLoaded(true);
+        } catch (e) { 
+          console.error("Load error", e); 
+          setIsLoaded(true);
         }
-      } catch (e) { 
-        console.error("Load error", e); 
-        setIsLoaded(true); // Prevent blocking even on error
-      }
-    } else {
-      setIsLoaded(true); // Guest or Welcome screen
+      };
+      loadData();
     }
-  }, [state.currentUser]);
+  }, [state.currentUser, isLoaded, initFirebase]);
 
-  // Save Data Effect
+  // Save Data Effect (Local + Cloud)
   useEffect(() => {
     if (!isLoaded || !state.currentUser || dataLoadedForUser.current !== state.currentUser) {
-      return; // Do NOT save until data is fully loaded and matches user
+      return; 
     }
 
-    const timer = setTimeout(() => {
+    const saveChanges = async () => {
       setIsSaving(true);
       try {
+        // 1. Save locally for PWA/Offline support
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
         localStorage.setItem(LAST_USER_KEY, state.currentUser!);
         
@@ -116,11 +160,23 @@ const App: React.FC = () => {
         if (users[state.currentUser!]) {
           users[state.currentUser!].events = events;
           localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
+          
+          // 2. Save to Cloud if enabled
+          if (state.isCloudEnabled && dbRef.current) {
+            const docRef = doc(dbRef.current, 'users', state.currentUser!);
+            await setDoc(docRef, {
+              events: events,
+              lastUpdated: new Date().toISOString()
+            }, { merge: true });
+          }
         }
-      } catch (e) { console.error("Save failed", e); }
-      setTimeout(() => setIsSaving(false), 500);
-    }, 1000); // Debounce saves
+      } catch (e) { 
+        console.error("Save failed", e); 
+      }
+      setTimeout(() => setIsSaving(false), 800);
+    };
 
+    const timer = setTimeout(saveChanges, 1000);
     return () => clearTimeout(timer);
   }, [events, state, isLoaded]);
 
@@ -162,7 +218,7 @@ const App: React.FC = () => {
   };
 
   const deleteEvent = (id: string) => {
-    if (confirm('מחק אירוע?')) {
+    if (confirm('למחוק את האירוע וכל נתוני ההושבה?')) {
       setEvents(prev => prev.filter(e => e.id !== id));
       if (state.currentEventId === id) {
         setState(prev => ({ ...prev, currentEventId: null }));
@@ -178,6 +234,7 @@ const App: React.FC = () => {
         hasActiveEvent={!!currentEvent} currentEventName={currentEvent?.name}
         onExitEvent={() => { setState(prev => ({ ...prev, currentEventId: null })); setActiveTab('dashboard'); }}
         onLogout={handleLogout} username={state.currentUser} isAdmin={userIsAdmin} isSaving={isSaving}
+        cloudStatus={cloudStatus}
       />
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {currentEvent && activeTab !== 'dashboard' && activeTab !== 'admin' && (
@@ -192,14 +249,26 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-            {isSaving && (
-              <div className="flex items-center gap-2 text-amber-500 font-bold text-xs animate-pulse">
-                <CheckCircle2 size={14} /> שומר שינויים...
+            <div className="flex items-center gap-4">
+               {state.isCloudEnabled && (
+                 <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black border border-green-100">
+                    <Cloud size={14} className="animate-pulse" />
+                    סנכרון ענן פעיל
+                 </div>
+               )}
+               <div className={`flex items-center gap-2 font-black text-[10px] transition-all duration-500 ${isSaving ? 'text-amber-500 scale-110' : 'text-green-500 opacity-60'}`}>
+                {isSaving ? <><CheckCircle2 size={14} className="animate-spin" /> שומר שינויים...</> : <><CheckCircle2 size={14} /> נשמר בהצלחה</>}
               </div>
-            )}
+            </div>
           </header>
         )}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto bg-gray-50/50 custom-scrollbar">
+        <main className="flex-1 p-4 md:p-8 overflow-y-auto bg-gray-50/50 custom-scrollbar relative">
+          {!isLoaded && (
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+              <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p className="font-black text-indigo-900">מאחזר מידע מהשרת...</p>
+            </div>
+          )}
           {activeTab === 'admin' ? <AdminPanel /> : (!currentEvent || activeTab === 'dashboard') ? (
             <EventDashboard events={events} onCreateEvent={createEvent} onUpdateEventMetadata={updateEventMetadata} onSelectEvent={(id) => { setState(prev => ({ ...prev, currentEventId: id })); setActiveTab('guests'); }} onDeleteEvent={deleteEvent} />
           ) : (

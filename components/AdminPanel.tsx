@@ -15,7 +15,8 @@ const AdminPanel: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
-  const USERS_DB_KEY = 'users_db_v2';
+  // Synchronized with App.tsx
+  const USERS_DB_KEY = 'users_db_v3';
   const ADMIN_EMAIL = 'robokeff@gmail.com';
 
   // Initial data load
@@ -86,7 +87,6 @@ const AdminPanel: React.FC = () => {
         setError('משתמש זה כבר קיים במערכת');
         return;
       }
-      // Fix: removed 'categories' as it is not defined in UserAccount interface
       updatedMap[newUsername] = {
         username: newUsername,
         password: formPassword,

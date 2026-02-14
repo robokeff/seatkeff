@@ -34,15 +34,26 @@ export interface EventData {
   whatsappTemplate?: string;
 }
 
+export interface FirebaseConfig {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
+}
+
 export interface UserAccount {
   username: string;
   password?: string;
   events: EventData[];
   isAdmin?: boolean;
+  cloudConfig?: FirebaseConfig;
 }
 
 export interface AppState {
   currentUser: string | null; // username
   currentEventId: string | null;
   showWelcome: boolean;
+  isCloudEnabled?: boolean;
 }

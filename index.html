@@ -44,21 +44,16 @@
     "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
     "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
     "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4"
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4",
+    "firebase/app": "https://esm.sh/firebase@10.8.0/app",
+    "firebase/firestore": "https://esm.sh/firebase@10.8.0/firestore",
+    "firebase/": "https://esm.sh/firebase@^12.9.0/"
   }
 }
 </script>
 </head>
   <body class="bg-gray-50 text-gray-900">
     <div id="root"></div>
-    <!-- טעינת ה-Entry Point של האפליקציה -->
     <script type="module" src="/index.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').then(reg => console.log('SW Registered')).catch(err => console.log('SW Failed', err));
-        });
-      }
-    </script>
   </body>
 </html>
