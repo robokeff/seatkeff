@@ -131,6 +131,7 @@ const EventEditor: React.FC<EventEditorProps> = ({ event, updateEvent, view }) =
         <HallLayout 
           tables={event.tables}
           guests={event.guests}
+          categories={event.categories}
           onUpdateTable={updateTable}
           onAssignGuest={(guestId, tableId) => updateGuest(guestId, { tableId })}
         />

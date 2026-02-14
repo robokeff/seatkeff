@@ -10,6 +10,7 @@ export interface Guest {
   children: number;
   tableId: string | null;
   confirmed: boolean;
+  color?: string;
 }
 
 export interface Table {
