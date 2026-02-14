@@ -1,18 +1,13 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { EventData, AppState, UserAccount, Guest, FirebaseConfig, CustomApiConfig } from './types';
+import { EventData, AppState, UserAccount, CustomApiConfig } from './types';
 import EventDashboard from './components/EventDashboard';
 import EventEditor from './components/EventEditor';
 import Sidebar from './components/Sidebar';
 import WelcomeScreen from './components/WelcomeScreen';
 import AuthScreen from './components/AuthScreen';
 import AdminPanel from './components/AdminPanel';
-import GuestRSVP from './components/GuestRSVP';
-import { Calendar, MapPin, ChevronLeft, CheckCircle2, Cloud, CloudOff, CloudCheck, Server, Clock, AlertTriangle, RefreshCw, Users, LayoutGrid, Map as MapIcon, Settings, ShieldCheck } from 'lucide-react';
-
-// Firebase Imports
-import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { Calendar, MapPin, ChevronLeft, CheckCircle2, Clock, RefreshCw, Users, LayoutGrid, Map as MapIcon, Settings, ShieldCheck } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'event_seat_pro_config_v3';
 const USERS_DB_KEY = 'users_db_v3';
@@ -34,9 +29,11 @@ const App: React.FC = () => {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) return JSON.parse(saved);
       const lastUser = localStorage.getItem(LAST_USER_KEY);
-      if (lastUser) return { currentUser: lastUser, currentEventId: null, showWelcome: false, isCloudEnabled: false };
-    } catch (e) {}
-    return { currentUser: null, currentEventId: null, showWelcome: true, isCloudEnabled: false };
+      if (lastUser) return { currentUser: lastUser, currentEventId: null, showWelcome: false };
+    } catch (e) {
+      console.warn("Storage parse error", e);
+    }
+    return { currentUser: null, currentEventId: null, showWelcome: true };
   });
 
   const [events, setEvents] = useState<EventData[]>([]);
@@ -48,22 +45,8 @@ const App: React.FC = () => {
   const [cloudStatus, setCloudStatus] = useState<'offline' | 'connecting' | 'online' | 'api' | 'conflict'>('offline');
   
   const dataLoadedForUser = useRef<string | null>(null);
-  const dbRef = useRef<any>(null);
   const apiConfigRef = useRef<CustomApiConfig | null>(null);
   const serverLastUpdated = useRef<string | null>(null);
-
-  const initFirebase = useCallback(async (config: FirebaseConfig) => {
-    try {
-      setCloudStatus('connecting');
-      const app = getApps().length === 0 ? initializeApp(config) : getApps()[0];
-      dbRef.current = getFirestore(app);
-      setCloudStatus('online');
-      return true;
-    } catch (e) {
-      setCloudStatus('offline');
-      return false;
-    }
-  }, []);
 
   const handleLogin = (username: string) => {
     const normalizedUsername = username.trim().toLowerCase();
@@ -76,46 +59,40 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setIsLoaded(false);
     dataLoadedForUser.current = null;
-    setState({ currentUser: null, currentEventId: null, showWelcome: false, isCloudEnabled: false });
+    setState({ currentUser: null, currentEventId: null, showWelcome: false });
     localStorage.removeItem(LOCAL_STORAGE_KEY);
     localStorage.removeItem(LAST_USER_KEY);
     setActiveTab('dashboard');
     setEvents([]);
     setUserIsAdmin(false);
     setCloudStatus('offline');
-    dbRef.current = null;
+    apiConfigRef.current = null;
   };
 
   const fetchRemoteData = useCallback(async (userData: UserAccount) => {
+    if (!userData.apiConfig || !userData.apiConfig.baseUrl) return null;
+    
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
-      if (userData.apiConfig) {
-        apiConfigRef.current = userData.apiConfig;
-        const res = await fetch(`${userData.apiConfig.baseUrl}/data`, {
-          headers: { 'Authorization': `Bearer ${userData.apiConfig.apiKey || ''}` },
-          signal: controller.signal
-        });
-        if (res.ok) {
-          const cloudData = await res.json();
-          clearTimeout(timeoutId);
-          serverLastUpdated.current = cloudData.lastUpdated;
-          return cloudData;
-        }
-      }
-      
-      if (userData.cloudConfig && dbRef.current) {
-        const docRef = doc(dbRef.current, 'users', userData.username);
-        const docSnap = await getDoc(docRef);
+      apiConfigRef.current = userData.apiConfig;
+      const res = await fetch(`${userData.apiConfig.baseUrl}/data`, {
+        headers: { 
+          'Authorization': `Bearer ${userData.apiConfig.apiKey || ''}`,
+          'Accept': 'application/json'
+        },
+        signal: controller.signal
+      });
+      if (res.ok) {
+        const cloudData = await res.json();
         clearTimeout(timeoutId);
-        if (docSnap.exists()) {
-          const cloudData = docSnap.data();
-          serverLastUpdated.current = cloudData.lastUpdated;
-          return cloudData;
-        }
+        serverLastUpdated.current = cloudData.lastUpdated;
+        return cloudData;
       }
-    } catch (e) { console.warn("Fetch failed, using local", e); }
+    } catch (e) { 
+      console.warn("Neon API fetch failed, falling back to local storage", e); 
+    }
     clearTimeout(timeoutId);
     return null;
   }, []);
@@ -135,7 +112,6 @@ const App: React.FC = () => {
           let userData = users[state.currentUser!];
           if (userData) {
             setUserIsAdmin(!!userData.isAdmin);
-            if (userData.cloudConfig) await initFirebase(userData.cloudConfig);
             const remoteData = await fetchRemoteData(userData);
             
             if (remoteData) {
@@ -143,39 +119,41 @@ const App: React.FC = () => {
               setState(prev => ({ 
                 ...prev, 
                 isApiEnabled: !!userData.apiConfig,
-                isCloudEnabled: !!userData.cloudConfig,
                 lastUpdated: remoteData.lastUpdated 
               }));
-              setCloudStatus(userData.apiConfig ? 'api' : 'online');
+              setCloudStatus('api');
             } else {
               setEvents(userData.events || []);
               setState(prev => ({ 
                 ...prev, 
                 isApiEnabled: !!userData.apiConfig,
-                isCloudEnabled: !!userData.cloudConfig,
                 lastUpdated: state.lastUpdated || new Date().toISOString()
               }));
+              setCloudStatus(userData.apiConfig ? 'api' : 'offline');
             }
           }
-        } catch (e) { console.error("Load error", e); }
-        finally {
+        } catch (e) { 
+          console.error("Local load error", e); 
+        } finally {
           dataLoadedForUser.current = state.currentUser;
           setIsLoaded(true);
         }
       };
       loadData();
     }
-  }, [state.currentUser, isLoaded, initFirebase, fetchRemoteData]);
+  }, [state.currentUser, isLoaded, fetchRemoteData, state.lastUpdated]);
 
   useEffect(() => {
     if (isLoaded) setHasUnsavedChanges(true);
-  }, [events]);
+  }, [events, isLoaded]);
 
   useEffect(() => {
     if (!isLoaded || !state.currentUser || !hasUnsavedChanges || dataLoadedForUser.current !== state.currentUser) return;
 
     const saveChanges = async () => {
+      // Don't save empty state if we previously had data from server
       if (events.length === 0 && serverLastUpdated.current) return;
+      
       setIsSaving(true);
       const now = new Date().toISOString();
       try {
@@ -190,22 +168,28 @@ const App: React.FC = () => {
         if (state.isApiEnabled && apiConfigRef.current) {
           await fetch(`${apiConfigRef.current.baseUrl}/save`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfigRef.current.apiKey || ''}` },
+            headers: { 
+              'Content-Type': 'application/json', 
+              'Authorization': `Bearer ${apiConfigRef.current.apiKey || ''}` 
+            },
             body: JSON.stringify({ events, lastUpdated: now })
           });
         }
 
         setState(prev => ({ ...prev, lastUpdated: now }));
         serverLastUpdated.current = now;
-        setCloudStatus(state.isApiEnabled ? 'api' : (state.isCloudEnabled ? 'online' : 'offline'));
+        setCloudStatus(state.isApiEnabled ? 'api' : 'offline');
         setHasUnsavedChanges(false);
-      } catch (e) { console.error("Save error", e); }
-      finally { setIsSaving(false); }
+      } catch (e) { 
+        console.error("API Save error (Neon)", e); 
+      } finally { 
+        setIsSaving(false); 
+      }
     };
 
     const timer = setTimeout(saveChanges, 2000);
     return () => clearTimeout(timer);
-  }, [events, state.currentUser, isLoaded, hasUnsavedChanges]);
+  }, [events, state.currentUser, isLoaded, hasUnsavedChanges, state.isApiEnabled]);
 
   const currentEvent = events.find(e => e.id === state.currentEventId) || null;
 
@@ -253,8 +237,8 @@ const App: React.FC = () => {
                  <button onClick={() => window.location.reload()} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 rounded-xl text-[9px] font-black border border-red-100 animate-pulse"><RefreshCw size={12} /> רענן</button>
                ) : (
                  <div className={`flex items-center gap-1.5 font-black text-[9px] transition-all duration-500 ${isSaving ? 'text-amber-500' : (hasUnsavedChanges ? 'text-indigo-400' : 'text-green-500 opacity-60')}`}>
-                    {isSaving ? <CheckCircle2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
-                    <span className="hidden sm:inline">{isSaving ? 'שומר...' : (hasUnsavedChanges ? 'שינויים לא שמורים' : 'מסונכרן')}</span>
+                    {isSaving ? <RefreshCw size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                    <span className="hidden sm:inline">{isSaving ? 'מסנכרן ל-Neon...' : (hasUnsavedChanges ? 'שינויים מקומיים' : 'מסונכרן')}</span>
                  </div>
                )}
             </div>
@@ -265,7 +249,7 @@ const App: React.FC = () => {
           {!isLoaded && (
             <div className="absolute inset-0 bg-white/90 backdrop-blur-md z-50 flex flex-col items-center justify-center">
               <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p className="font-black text-indigo-950">טוען את האירועים שלך...</p>
+              <p className="font-black text-indigo-950">מתחבר למסד הנתונים...</p>
             </div>
           )}
           {activeTab === 'admin' ? <AdminPanel /> : (!currentEvent || activeTab === 'dashboard') ? (
@@ -276,7 +260,6 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-100 p-2 flex justify-around items-center z-50 pb-safe">
         {currentEvent ? (
           <>

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Table as TableType, Guest, HallElement, HallElementType, HallTemplate } from '../types';
 import { 
   Image as ImageIcon, X, Layers, Users, Plus, RotateCw, Trash2, Save, Map as MapIcon,
-  Music, Utensils, Beer, DoorOpen, Trees, Square, Layout, Settings, Maximize2, Move
+  Music, Utensils, Beer, DoorOpen, Trees, Square, Layout, Settings, Maximize2, Move, Disc
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
@@ -25,7 +25,7 @@ interface HallLayoutProps {
 
 const ELEMENT_ICONS: Record<HallElementType, any> = {
   stage: Music,
-  dance_floor: Layers,
+  dance_floor: Disc,
   bar: Beer,
   buffet: Utensils,
   entrance: DoorOpen,
@@ -58,7 +58,6 @@ const HallLayout: React.FC<HallLayoutProps> = ({
   
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const exportWrapperRef = useRef<HTMLDivElement>(null);
 
   const CANVAS_SIZE = 1500;
 
@@ -74,7 +73,6 @@ const HallLayout: React.FC<HallLayoutProps> = ({
     const x = Math.round((e.clientX - rect.left - 50) / 10) * 10;
     const y = Math.round((e.clientY - rect.top - 50) / 10) * 10;
     
-    // Boundary checks
     const boundedX = Math.max(0, Math.min(x, CANVAS_SIZE - 100));
     const boundedY = Math.max(0, Math.min(y, CANVAS_SIZE - 100));
 
@@ -90,7 +88,7 @@ const HallLayout: React.FC<HallLayoutProps> = ({
       id: crypto.randomUUID(),
       type,
       label: ELEMENT_NAMES[type],
-      position: { x: 500, y: 500 },
+      position: { x: 700, y: 700 },
       size: { width: 150, height: 100 },
       rotation: 0
     };
@@ -103,7 +101,7 @@ const HallLayout: React.FC<HallLayoutProps> = ({
     onAddTable({
       number: nextNum,
       capacity: 10,
-      position: { x: 600, y: 600 },
+      position: { x: 750, y: 750 },
       type: 'round',
       rotation: 0
     });
@@ -120,12 +118,12 @@ const HallLayout: React.FC<HallLayoutProps> = ({
   };
 
   const exportAsImage = async () => {
-    if (!exportWrapperRef.current) return;
+    if (!canvasRef.current) return;
     setSelectedId(null);
     setIsExporting(true);
     await new Promise(r => setTimeout(r, 800));
     try {
-      const canvas = await html2canvas(canvasRef.current!, { 
+      const canvas = await html2canvas(canvasRef.current, { 
         scale: 1, 
         useCORS: true, 
         backgroundColor: '#ffffff',
@@ -151,14 +149,14 @@ const HallLayout: React.FC<HallLayoutProps> = ({
   const selectedTable = selectedId?.type === 'table' ? tables.find(t => t.id === selectedId.id) : null;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] font-['Assistant']" dir="rtl">
+    <div className="flex flex-col h-[calc(100vh-120px)] font-['Assistant'] relative overflow-hidden" dir="rtl">
       {/* Top Header */}
-      <header className="bg-white border-b border-gray-100 p-4 md:p-6 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0">
+      <header className="bg-white border-b border-gray-100 p-4 md:p-6 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-50">
         <div>
           <h2 className="text-2xl font-black text-indigo-950 flex items-center gap-2">
-            <MapIcon className="text-indigo-600" /> מעבדת עיצוב אולם
+            <MapIcon className="text-indigo-600" /> מעבדת עיצוב אולם Pro
           </h2>
-          <p className="text-gray-400 text-xs font-bold">תכנון ועיצוב אולם במידות 1500x1500px</p>
+          <p className="text-gray-400 text-xs font-bold">תכנון ועיצוב אולם במידות 1500x1500px מבית רובוכיף</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowTemplateModal(true)} className="bg-indigo-50 text-indigo-600 font-black px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 hover:bg-indigo-100 transition-all">
@@ -170,14 +168,14 @@ const HallLayout: React.FC<HallLayoutProps> = ({
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Toolbox Sidebar */}
-        <aside className="w-24 md:w-32 bg-white border-l border-gray-100 p-2 md:p-4 flex flex-col gap-3 overflow-y-auto custom-scrollbar shrink-0">
+      <div className="flex flex-1 overflow-hidden">
+        {/* Toolbox Sidebar - Hebrew Names & Icons */}
+        <aside className="w-24 md:w-32 bg-white border-l border-gray-100 p-2 md:p-4 flex flex-col gap-3 overflow-y-auto custom-scrollbar shrink-0 z-40">
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-center mb-1">אלמנטים</p>
           <ToolButton icon={Layout} label="שולחן" color="indigo" onClick={addNewTable} />
           <div className="h-px bg-gray-100 my-1" />
           <ToolButton icon={Music} label="במה" onClick={() => addNewElement('stage')} />
-          <ToolButton icon={Layers} label="רחבה" onClick={() => addNewElement('dance_floor')} />
+          <ToolButton icon={Disc} label="רחבה" onClick={() => addNewElement('dance_floor')} />
           <ToolButton icon={Beer} label="בר" onClick={() => addNewElement('bar')} />
           <ToolButton icon={Utensils} label="בופה" onClick={() => addNewElement('buffet')} />
           <ToolButton icon={DoorOpen} label="כניסה" onClick={() => addNewElement('entrance')} />
@@ -185,36 +183,36 @@ const HallLayout: React.FC<HallLayoutProps> = ({
           <ToolButton icon={Square} label="קיר" onClick={() => addNewElement('wall')} />
         </aside>
 
-        {/* Canvas Area with Scrolling */}
+        {/* Canvas Area with Internal Scrolling */}
         <main 
           ref={containerRef}
-          className="flex-1 bg-gray-100 overflow-auto p-8 custom-scrollbar relative"
+          className="flex-1 bg-gray-100 overflow-auto p-8 custom-scrollbar relative z-10"
         >
           <div 
             ref={canvasRef}
             onMouseMove={handleMouseMove}
-            className="bg-white shadow-2xl relative mx-auto border-4 border-dashed border-gray-200"
+            className="bg-white shadow-2xl relative mx-auto border-4 border-dashed border-gray-200 cursor-default"
             style={{ 
               width: CANVAS_SIZE, 
               height: CANVAS_SIZE,
               backgroundImage: 'radial-gradient(#e5e7eb 1.5px, transparent 1.5px)', 
-              backgroundSize: '30px 30px' 
+              backgroundSize: '40px 40px' 
             }}
           >
-            {/* Legend / Origin Indicator */}
-            <div className="absolute top-4 left-4 text-gray-200 font-black text-4xl select-none pointer-events-none opacity-20 uppercase">
-              Hall Draft 1.5K
+            {/* Design Watermark */}
+            <div className="absolute top-10 left-10 text-gray-100 font-black text-6xl select-none pointer-events-none opacity-20 uppercase tracking-tighter">
+              Robokeff Lab 1.5K
             </div>
 
             {/* Render Custom Elements */}
             {elements.map((el) => {
-              const Icon = ELEMENT_ICONS[el.type];
+              const Icon = ELEMENT_ICONS[el.type] || Square;
               const isSelected = selectedId?.id === el.id;
               return (
                 <div
                   key={el.id}
                   onMouseDown={(e) => handleMouseDown(el.id, 'element', e)}
-                  className={`absolute flex flex-col items-center justify-center rounded-2xl border-4 transition-all group ${isSelected ? 'border-indigo-600 bg-indigo-50 shadow-2xl z-30 scale-105' : 'border-gray-100 bg-gray-50/50 z-10 hover:border-indigo-200'}`}
+                  className={`absolute flex flex-col items-center justify-center rounded-2xl border-4 transition-all group ${isSelected ? 'border-indigo-600 bg-indigo-50 shadow-2xl z-30 scale-105 cursor-grabbing' : 'border-gray-100 bg-gray-50/50 z-10 hover:border-indigo-200 cursor-grab'}`}
                   style={{ 
                     left: el.position.x, 
                     top: el.position.y, 
@@ -223,13 +221,13 @@ const HallLayout: React.FC<HallLayoutProps> = ({
                     transform: `rotate(${el.rotation || 0}deg)` 
                   }}
                 >
-                  <Icon className={`${isSelected ? 'text-indigo-600' : 'text-gray-300'}`} size={32} />
-                  <span className="text-[10px] font-black text-indigo-950 mt-2 px-2 text-center break-words">{el.label}</span>
+                  <Icon className={`${isSelected ? 'text-indigo-600' : 'text-gray-300'}`} size={Math.min(el.size.width, el.size.height) * 0.4} />
+                  <span className="text-[10px] font-black text-indigo-950 mt-2 px-2 text-center break-words select-none">{el.label}</span>
                 </div>
               );
             })}
 
-            {/* Render Tables */}
+            {/* Render Tables with Number */}
             {tables.map((table) => {
               const occupied = guests.filter(g => g.tableId === table.id).reduce((s, g) => s + g.adults + g.children, 0);
               const isFull = occupied >= table.capacity;
@@ -242,8 +240,8 @@ const HallLayout: React.FC<HallLayoutProps> = ({
                   style={{ left: table.position.x, top: table.position.y, transform: `rotate(${table.rotation || 0}deg)` }}
                 >
                   <div className={`w-24 h-24 rounded-full border-4 flex flex-col items-center justify-center p-3 text-center shadow-lg transition-all ${isSelected ? 'border-indigo-600 bg-indigo-50 ring-8 ring-indigo-100/30 scale-110' : (isFull ? 'bg-indigo-900 border-indigo-700 text-white' : 'bg-white border-indigo-100 hover:border-indigo-300')}`}>
-                    <span className="text-xl font-black">#{table.number}</span>
-                    <span className="text-[9px] font-bold opacity-60 uppercase">{occupied}/{table.capacity} איש</span>
+                    <span className="text-xl font-black select-none">#{table.number}</span>
+                    <span className="text-[9px] font-bold opacity-60 uppercase select-none">{occupied}/{table.capacity} איש</span>
                   </div>
                 </div>
               );
@@ -394,9 +392,9 @@ const HallLayout: React.FC<HallLayoutProps> = ({
         </div>
       )}
 
-      {/* Footer Branding Overlay (Sticky) */}
+      {/* Footer Branding Overlay */}
       <div className="absolute bottom-6 right-6 bg-white/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/20 z-50 pointer-events-none">
-        <p className="text-[10px] font-black text-indigo-900 opacity-40">סקיצת רובוכיף בע"מ - 1.5K Canvas</p>
+        <p className="text-[10px] font-black text-indigo-900 opacity-40 uppercase tracking-widest">Robokeff Software Lab &copy; 2024</p>
       </div>
     </div>
   );
@@ -408,7 +406,7 @@ const ToolButton = ({ icon: Icon, label, color = "gray", onClick }: { icon: any,
     className={`flex flex-col items-center justify-center w-full aspect-square rounded-2xl transition-all group shrink-0 shadow-sm border ${color === 'indigo' ? 'bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700' : 'bg-white text-gray-400 border-gray-50 hover:border-indigo-200 hover:text-indigo-600'}`}
   >
     <Icon size={20} />
-    <span className="text-[9px] font-black mt-1 text-center leading-tight">{label}</span>
+    <span className="text-[9px] font-black mt-1 text-center leading-tight select-none">{label}</span>
   </button>
 );
 

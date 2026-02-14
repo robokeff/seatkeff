@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Heart, ArrowLeft, MessageCircle, Zap, Smartphone, LayoutGrid, Users, Phone, MapPin, ShieldCheck, Star } from 'lucide-react';
+import { Heart, ArrowLeft, MessageCircle, Zap, Smartphone, LayoutGrid, Users, Phone, ShieldCheck, Star } from 'lucide-react';
 
 interface WelcomeScreenProps {
   onStart: () => void;
@@ -76,8 +76,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-32 max-w-6xl mx-auto">
           <BenefitCard 
             icon={Smartphone} 
-            title="סנכרון ענן מלא" 
-            desc="גשו לנתונים מכל מקום - סמארטפון, טאבלט או מחשב. הכל מסונכרן ומתעדכן בזמן אמת."
+            title="סנכרון Neon מהיר" 
+            desc="גשו לנתונים מכל מקום - סמארטפון, טאבלט או מחשב. הכל מסונכרן מול מסד הנתונים בענן."
           />
           <BenefitCard 
             icon={LayoutGrid} 
@@ -91,26 +91,26 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
           />
         </div>
 
-        {/* Brand Information Window (The Styled Bottom Section) */}
-        <section className="mt-48 max-w-5xl mx-auto relative animate-fadeIn">
+        {/* Brand Information Window */}
+        <section className="mt-48 max-w-6xl mx-auto relative animate-fadeIn">
           <div className="absolute inset-0 bg-indigo-500/10 blur-3xl rounded-full scale-110 pointer-events-none" />
           
-          <div className="relative bg-white/5 backdrop-blur-2xl border border-white/10 rounded-[4rem] p-8 md:p-16 overflow-hidden shadow-2xl">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-50" />
+          <div className="relative bg-white/5 backdrop-blur-2xl border border-white/10 rounded-[4rem] p-10 md:p-20 overflow-hidden shadow-2xl">
+            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-50" />
             
-            <div className="flex flex-col md:flex-row items-center justify-between gap-12">
-              <div className="text-right space-y-6 flex-1">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/20 rounded-lg text-indigo-300 text-[10px] font-black uppercase tracking-widest">
-                  <ShieldCheck size={12} /> פיתוח ישראלי מובטח
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-16">
+              <div className="text-right space-y-8 flex-1">
+                <div className="inline-flex items-center gap-3 px-4 py-2 bg-indigo-500/20 rounded-xl text-indigo-300 text-xs font-black uppercase tracking-widest">
+                  <ShieldCheck size={16} /> פיתוח ישראלי מובטח
                 </div>
-                <h2 className="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-l from-white via-white to-indigo-400">
+                <h2 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-l from-white via-white to-indigo-400">
                   רובוכיף בע"מ
                 </h2>
-                <p className="text-indigo-100/60 font-medium text-lg leading-relaxed max-w-xl">
+                <p className="text-indigo-100/60 font-medium text-xl leading-relaxed max-w-2xl">
                   חברת רובוכיף מובילה את מהפכת הניהול הדיגיטלי לאירועים בישראל. אנחנו מאמינים שכל אירוע מוצלח מתחיל בסדר ונגמר בחיוך. הצוות שלנו זמין עבורכם לכל שאלה, תמיכה טכנית או התאמה אישית של המערכת.
                 </p>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6">
                   <ContactInfoItem 
                     icon={Phone} 
                     label="שיחת ייעוץ ותמיכה" 
@@ -127,17 +127,17 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                 </div>
               </div>
 
-              <div className="w-full md:w-auto flex flex-col items-center gap-4 bg-indigo-600/10 p-10 rounded-[3rem] border border-white/5 shadow-inner">
-                <div className="w-24 h-24 bg-indigo-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-indigo-600/40 border border-white/20">
-                  <Zap size={48} className="text-white fill-white" />
+              <div className="w-full lg:w-auto flex flex-col items-center gap-6 bg-indigo-600/10 p-12 md:p-16 rounded-[4rem] border border-white/5 shadow-inner">
+                <div className="w-32 h-32 bg-indigo-600 rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-indigo-600/40 border border-white/20">
+                  <Zap size={64} className="text-white fill-white" />
                 </div>
-                <div className="text-center">
-                   <p className="text-xs font-black text-indigo-300 uppercase tracking-[0.2em] mb-1">Established</p>
-                   <p className="text-2xl font-black text-white">2024</p>
+                <div className="text-center space-y-1">
+                   <p className="text-sm font-black text-indigo-300 uppercase tracking-[0.3em]">Established</p>
+                   <p className="text-4xl font-black text-white">2026</p>
                 </div>
                 <button 
                   onClick={() => window.open(WHATSAPP_LINK, '_blank')}
-                  className="mt-4 px-8 py-3 bg-white text-indigo-950 font-black rounded-2xl hover:bg-indigo-50 transition-all shadow-xl"
+                  className="mt-6 px-12 py-5 bg-white text-indigo-950 font-black text-lg rounded-3xl hover:bg-indigo-50 transition-all shadow-xl hover:scale-105 active:scale-95"
                 >
                   הזמן רישיון עכשיו
                 </button>
@@ -145,9 +145,9 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
             </div>
           </div>
 
-          <div className="mt-12 text-center opacity-30">
-            <p className="text-[10px] font-black tracking-[0.3em] uppercase">
-              Official Robokeff Software &copy; {new Date().getFullYear()} • All Rights Reserved
+          <div className="mt-16 text-center opacity-30 pb-10">
+            <p className="text-xs font-black tracking-[0.4em] uppercase text-indigo-300">
+              Official Robokeff Software &copy; {new Date().getFullYear()} • Precision Seating Systems
             </p>
           </div>
         </section>
@@ -171,14 +171,14 @@ const ContactInfoItem = ({ icon: Icon, label, value, href, color = "indigo" }: {
     href={href} 
     target="_blank" 
     rel="noopener noreferrer"
-    className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all group"
+    className="flex items-center gap-6 p-6 rounded-3xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all group"
   >
-    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${color === 'green' ? 'bg-green-500/20 text-green-400' : 'bg-indigo-500/20 text-indigo-400'} group-hover:scale-110 transition-transform`}>
-      <Icon size={20} />
+    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${color === 'green' ? 'bg-green-500/20 text-green-400' : 'bg-indigo-500/20 text-indigo-400'} group-hover:scale-110 transition-transform`}>
+      <Icon size={24} />
     </div>
     <div className="text-right">
-      <p className="text-[9px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">{label}</p>
-      <p className="text-lg font-black text-white">{value}</p>
+      <p className="text-xs font-black text-white/40 uppercase tracking-widest leading-none mb-2">{label}</p>
+      <p className="text-xl font-black text-white">{value}</p>
     </div>
   </a>
 );

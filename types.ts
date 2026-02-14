@@ -59,15 +59,6 @@ export interface EventData {
   hallTemplateId?: string;
 }
 
-export interface FirebaseConfig {
-  apiKey: string;
-  authDomain: string;
-  projectId: string;
-  storageBucket: string;
-  messagingSenderId: string;
-  appId: string;
-}
-
 export interface CustomApiConfig {
   baseUrl: string;
   apiKey?: string;
@@ -79,7 +70,6 @@ export interface UserAccount {
   events: EventData[];
   hallTemplates?: HallTemplate[];
   isAdmin?: boolean;
-  cloudConfig?: FirebaseConfig;
   apiConfig?: CustomApiConfig;
 }
 
@@ -87,7 +77,6 @@ export interface AppState {
   currentUser: string | null;
   currentEventId: string | null;
   showWelcome: boolean;
-  isCloudEnabled?: boolean;
   isApiEnabled?: boolean;
   lastUpdated?: string;
 }
