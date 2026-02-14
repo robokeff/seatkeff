@@ -1,0 +1,46 @@
+
+{
+  "name": "יושבים בכיף - ניהול הושבה חכם",
+  "short_name": "יושבים בכיף",
+  "description": "ניהול מוזמנים וסידורי הושבה חכם לאירועים",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#312e81",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/heart.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/heart.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "events"],
+  "shortcuts": [
+    {
+      "name": "מוזמנים",
+      "url": "/?tab=guests",
+      "icons": [{ "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/users.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "שולחנות",
+      "url": "/?tab=tables",
+      "icons": [{ "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/layout-grid.svg", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://raw.githubusercontent.com/lucide-react/lucide/main/icons/heart.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "מסך ראשי"
+    }
+  ]
+}
