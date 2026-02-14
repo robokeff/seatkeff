@@ -18,7 +18,30 @@ export interface Table {
   number: number;
   capacity: number;
   name?: string;
-  position?: { x: number; y: number };
+  position: { x: number; y: number };
+  rotation?: number;
+  type: 'round' | 'rectangular' | 'long';
+}
+
+export type HallElementType = 'stage' | 'dance_floor' | 'bar' | 'buffet' | 'entrance' | 'dj' | 'wall' | 'plant';
+
+export interface HallElement {
+  id: string;
+  type: HallElementType;
+  label: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  rotation?: number;
+}
+
+export interface HallTemplate {
+  id: string;
+  name: string;
+  createdBy: string; // username
+  tables: Omit<Table, 'id'>[]; // Template tables don't need guests assigned
+  elements: HallElement[];
+  width: number;
+  height: number;
 }
 
 export interface EventData {
@@ -30,8 +53,10 @@ export interface EventData {
   imageUrl?: string;
   guests: Guest[];
   tables: Table[];
+  elements: HallElement[]; // Custom elements for this specific event
   categories: string[];
   whatsappTemplate?: string;
+  hallTemplateId?: string;
 }
 
 export interface FirebaseConfig {
@@ -52,16 +77,17 @@ export interface UserAccount {
   username: string;
   password?: string;
   events: EventData[];
+  hallTemplates?: HallTemplate[];
   isAdmin?: boolean;
   cloudConfig?: FirebaseConfig;
   apiConfig?: CustomApiConfig;
 }
 
 export interface AppState {
-  currentUser: string | null; // username
+  currentUser: string | null;
   currentEventId: string | null;
   showWelcome: boolean;
   isCloudEnabled?: boolean;
   isApiEnabled?: boolean;
-  lastUpdated?: string; // ISO string of last sync
+  lastUpdated?: string;
 }

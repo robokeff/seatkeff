@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LogIn, UserPlus, Heart, Eye, EyeOff, UserCircle2, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
+import { UserPlus, Heart, UserCircle2, ShieldCheck, Delete, ChevronLeft, MessageCircle } from 'lucide-react';
 import { UserAccount } from '../types';
 
 interface AuthScreenProps {
@@ -8,286 +8,154 @@ interface AuthScreenProps {
 }
 
 const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
-  const [isLogin, setIsLogin] = useState(true);
+  const [view, setView] = useState<'profiles' | 'pin' | 'register'>('profiles');
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [pincode, setPincode] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [rememberedUser, setRememberedUser] = useState<string | null>(null);
+  const [allUsers, setAllUsers] = useState<Record<string, UserAccount>>({});
 
-  // Synchronized with App.tsx
   const USERS_DB_KEY = 'users_db_v3';
   const LAST_USER_KEY = 'last_logged_user_v3';
-  
   const ADMIN_EMAIL = 'robokeff@gmail.com';
   const ADMIN_PASS = '9985';
+  const WHATSAPP_NUMBER = '972549985605';
+
+  const loadUsers = () => {
+    const usersRaw = localStorage.getItem(USERS_DB_KEY);
+    let users = usersRaw ? JSON.parse(usersRaw) : {};
+    if (!users[ADMIN_EMAIL]) {
+      users[ADMIN_EMAIL] = { username: ADMIN_EMAIL, password: ADMIN_PASS, events: [], isAdmin: true };
+      localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
+    }
+    setAllUsers(users);
+    return users;
+  };
 
   useEffect(() => {
-    const lastUser = localStorage.getItem(LAST_USER_KEY);
-    if (lastUser) {
-      setRememberedUser(lastUser);
-      setUsername(lastUser);
-    }
+    const users = loadUsers();
+    const userList = Object.keys(users);
+    if (userList.length === 1) { setSelectedUser(userList[0]); setView('pin'); }
+    else { setView('profiles'); }
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handlePinInput = (num: string) => {
+    if (error) setError('');
+    if (pincode.length < 4) {
+      const newPin = pincode + num;
+      setPincode(newPin);
+      if (newPin.length === 4) verifyPin(newPin);
+    }
+  };
+
+  const verifyPin = (pinToVerify: string) => {
+    if (selectedUser === ADMIN_EMAIL && pinToVerify === ADMIN_PASS) { completeLogin(ADMIN_EMAIL); return; }
+    const user = allUsers[selectedUser || ''];
+    if (user && user.password === pinToVerify) completeLogin(selectedUser!);
+    else { setError('קוד שגוי'); setTimeout(() => { setPincode(''); setError(''); }, 1000); }
+  };
+
+  const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    
-    const normalizedUsername = username.trim().toLowerCase();
-    
-    if (!normalizedUsername) {
-      setError('נא להזין כתובת אימייל');
-      return;
-    }
-
-    if (pincode.length !== 4) {
-      setError('קוד הגישה חייב להכיל בדיוק 4 ספרות');
-      return;
-    }
-
-    const usersRaw = localStorage.getItem(USERS_DB_KEY);
-    const users: Record<string, UserAccount> = usersRaw ? JSON.parse(usersRaw) : {};
-
-    if (isLogin) {
-      // Priority Check: Admin Master Credentials
-      if (normalizedUsername === ADMIN_EMAIL && pincode === ADMIN_PASS) {
-        if (!users[normalizedUsername]) {
-          users[normalizedUsername] = { 
-              username: normalizedUsername, 
-              password: ADMIN_PASS, 
-              events: [],
-              isAdmin: true
-          };
-        }
-        completeLogin(normalizedUsername, users);
-        return;
-      }
-
-      // Database Check
-      const user = users[normalizedUsername];
-      if (!user) {
-        setError('משתמש זה אינו רשום במערכת. יש לעבור למסך הרשמה.');
-        return;
-      }
-
-      if (user.password === pincode) {
-        completeLogin(normalizedUsername, users);
-      } else {
-        setError('קוד הגישה אינו נכון');
-      }
-    } else {
-      // Registration Logic
-      if (users[normalizedUsername]) {
-        setError('משתמש זה כבר רשום במערכת. נסו להתחבר.');
-      } else {
-        const newUser: UserAccount = { 
-            username: normalizedUsername, 
-            password: pincode, 
-            events: [],
-            isAdmin: normalizedUsername === ADMIN_EMAIL
-        };
-        users[normalizedUsername] = newUser;
-        completeLogin(normalizedUsername, users);
-      }
-    }
+    const normalized = username.trim().toLowerCase();
+    if (!normalized || pincode.length !== 4) { setError('השלם את כל הפרטים'); return; }
+    if (allUsers[normalized]) { setError('משתמש כבר קיים'); return; }
+    const newUser: UserAccount = { username: normalized, password: pincode, events: [], isAdmin: normalized === ADMIN_EMAIL };
+    const updated = { ...allUsers, [normalized]: newUser };
+    localStorage.setItem(USERS_DB_KEY, JSON.stringify(updated));
+    completeLogin(normalized);
   };
 
-  const completeLogin = (userEmail: string, usersMap: Record<string, UserAccount>) => {
-    try {
-      localStorage.setItem(USERS_DB_KEY, JSON.stringify(usersMap));
-      localStorage.setItem(LAST_USER_KEY, userEmail);
-      onLogin(userEmail);
-    } catch (e) {
-      setError('שגיאה בשמירת הנתונים במכשיר.');
-    }
+  const completeLogin = (userEmail: string) => {
+    localStorage.setItem(LAST_USER_KEY, userEmail);
+    onLogin(userEmail);
   };
 
-  const handlePincodeChange = (val: string) => {
-    const sanitized = val.replace(/\D/g, '').slice(0, 4);
-    setPincode(sanitized);
-    // Auto-submit if 4 digits entered in quick login
-    if (rememberedUser && sanitized.length === 4 && isLogin) {
-       // We can't easily call handleSubmit here without the event, 
-       // but the user will likely click login anyway.
-    }
-  };
-
-  const switchAccount = () => {
-    localStorage.removeItem(LAST_USER_KEY);
-    setRememberedUser(null);
-    setUsername('');
-    setPincode('');
-    setError('');
-  };
-
-  // QUICK LOGIN VIEW
-  if (rememberedUser && isLogin) {
-    return (
-      <div className="min-h-screen bg-indigo-950 flex items-center justify-center p-4 font-['Assistant']" dir="rtl">
-        <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-md p-12 overflow-hidden relative text-center border-t-8 border-indigo-600 animate-slideUp">
-          <div className="relative z-10">
-            <div className="flex justify-center mb-8">
-              <div className="relative">
-                <div className="w-28 h-28 bg-indigo-100 rounded-[2.5rem] flex items-center justify-center text-indigo-600 border-4 border-white shadow-2xl rotate-3">
-                  <UserCircle2 size={72} />
-                </div>
-                <div className="absolute -bottom-2 -right-2 bg-green-500 text-white p-2 rounded-full border-4 border-white">
-                  <ShieldCheck size={20} />
-                </div>
-              </div>
-            </div>
-            
-            <h2 className="text-3xl font-black text-indigo-950 mb-2">שמחים שחזרת!</h2>
-            <p className="text-gray-400 text-sm font-bold mb-10 flex items-center justify-center gap-2">
-              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-              {rememberedUser}
-            </p>
-
-            <form onSubmit={handleSubmit} className="space-y-8">
-              <div className="space-y-4">
-                <label className="block text-xs font-black text-indigo-400 uppercase tracking-[0.2em]">הקש קוד גישה לכניסה</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    inputMode="numeric"
-                    autoFocus
-                    required
-                    autoComplete="one-time-code"
-                    className="w-full px-6 py-6 rounded-[2rem] border-2 border-gray-50 bg-gray-50 focus:border-indigo-500 focus:bg-white outline-none transition-all font-black text-4xl tracking-[1.5rem] text-center pl-16 text-indigo-950 shadow-inner"
-                    value={pincode}
-                    onChange={(e) => handlePincodeChange(e.target.value)}
-                    placeholder="••••"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 hover:text-indigo-600 transition-colors p-2"
-                  >
-                    {showPassword ? <EyeOff size={24} /> : <Eye size={24} />}
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <div className="bg-red-50 p-4 rounded-2xl border border-red-100 flex items-center gap-3 text-red-600 animate-fadeIn">
-                  <AlertCircle size={20} className="shrink-0" />
-                  <p className="text-sm font-black leading-tight">{error}</p>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={pincode.length !== 4}
-                className={`w-full font-black py-5 rounded-[1.5rem] shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 group ${
-                  pincode.length === 4 ? 'bg-indigo-600 text-white shadow-indigo-200' : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                }`}
-              >
-                <LogIn size={24} />
-                <span className="text-xl">היכנס עכשיו</span>
-              </button>
-            </form>
-
-            <div className="mt-12 pt-8 border-t border-gray-100">
-              <button
-                onClick={switchAccount}
-                className="text-gray-400 hover:text-indigo-600 font-bold text-xs flex items-center justify-center gap-2 mx-auto transition-colors group"
-              >
-                <ArrowRight size={16} className="rotate-180 group-hover:translate-x-1 transition-transform" />
-                זה לא החשבון שלי? התחבר עם אימייל אחר
-              </button>
-            </div>
-          </div>
-        </div>
+  const Keypad = () => (
+    <div className="grid grid-cols-3 gap-3 md:gap-4 max-w-[280px] mx-auto mt-6 md:mt-8" dir="ltr">
+      {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+        <button key={num} type="button" onClick={() => handlePinInput(num.toString())} className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-indigo-50 text-indigo-900 text-xl md:text-2xl font-black hover:bg-indigo-100 active:scale-90 transition-all flex items-center justify-center shadow-sm">
+          {num}
+        </button>
+      ))}
+      <div className="flex items-center justify-center">
+        <button type="button" onClick={() => setPincode('')} className="text-gray-400 font-bold text-[10px] hover:text-red-500">נקה</button>
       </div>
-    );
-  }
+      <button type="button" onClick={() => handlePinInput('0')} className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-indigo-50 text-indigo-900 text-xl md:text-2xl font-black hover:bg-indigo-100 active:scale-90 transition-all flex items-center justify-center shadow-sm">0</button>
+      <button type="button" onClick={() => setPincode(pincode.slice(0, -1))} className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-gray-50 text-gray-400 flex items-center justify-center active:scale-90 transition-all">
+        <Delete size={20} />
+      </button>
+    </div>
+  );
 
-  // STANDARD LOGIN/REGISTER VIEW
   return (
-    <div className="min-h-screen bg-indigo-950 flex items-center justify-center p-4 font-['Assistant']" dir="rtl">
-      <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-md p-12 overflow-hidden relative animate-fadeIn">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-bl-full -z-0 opacity-40"></div>
-        
-        <div className="relative z-10">
-          <div className="flex justify-center mb-8">
-            <div className="p-6 bg-indigo-600 rounded-[2rem] text-white shadow-2xl shadow-indigo-200 rotate-12">
-              <Heart size={40} className="fill-white" />
-            </div>
-          </div>
-          
-          <h2 className="text-4xl font-black text-center text-indigo-950 mb-3">
-            {isLogin ? 'יושבים בכיף' : 'הרשמה למערכת'}
-          </h2>
-          <p className="text-gray-400 text-center text-sm mb-12 font-bold leading-relaxed">
-            {isLogin ? 'ניהול מוזמנים והושבה בדרך הפשוטה ביותר' : 'בחר אימייל וקוד גישה בן 4 ספרות'}
-          </p>
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <label className="block text-[10px] font-black text-indigo-400 mr-2 uppercase tracking-[0.2em]">כתובת אימייל</label>
-              <input
-                type="email"
-                required
-                className="w-full px-6 py-4 rounded-2xl border-2 border-gray-50 bg-gray-50 focus:border-indigo-500 focus:bg-white outline-none transition-all font-bold text-indigo-950 placeholder:text-gray-300"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="email@example.com"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-[10px] font-black text-indigo-400 mr-2 uppercase tracking-[0.2em]">קוד גישה (4 ספרות)</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  inputMode="numeric"
-                  required
-                  className="w-full px-6 py-4 rounded-2xl bg-gray-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white outline-none transition-all font-black text-3xl tracking-[1rem] text-center pl-16 text-indigo-950"
-                  value={pincode}
-                  onChange={(e) => handlePincodeChange(e.target.value)}
-                  placeholder="••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600 transition-colors p-2"
-                >
-                  {showPassword ? <EyeOff size={24} /> : <Eye size={24} />}
+    <div className="min-h-screen bg-indigo-950 flex flex-col items-center justify-center p-4 font-['Assistant']" dir="rtl">
+      <div className="bg-white rounded-[2.5rem] md:rounded-[3.5rem] shadow-2xl w-full max-w-md p-6 md:p-10 overflow-hidden relative animate-fadeIn border-t-8 border-indigo-600">
+        {view === 'profiles' && (
+          <div className="text-center animate-slideUp">
+            <h2 className="text-2xl md:text-3xl font-black text-indigo-950 mb-8">בחר פרופיל</h2>
+            <div className="grid grid-cols-2 gap-4 md:gap-6 mb-6">
+              {Object.keys(allUsers).map(u => (
+                <button key={u} onClick={() => { setSelectedUser(u); setView('pin'); setPincode(''); }} className="flex flex-col items-center gap-3 group">
+                  <div className="w-20 h-20 md:w-24 md:h-24 rounded-[1.5rem] md:rounded-[2rem] bg-indigo-50 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
+                    <UserCircle2 size={40} />
+                  </div>
+                  <span className="text-[10px] md:text-xs font-black text-gray-500 truncate w-full px-2">{u}</span>
                 </button>
-              </div>
+              ))}
+              <button onClick={() => { setView('register'); setPincode(''); setUsername(''); }} className="flex flex-col items-center gap-3 group">
+                <div className="w-20 h-20 md:w-24 md:h-24 rounded-[1.5rem] md:rounded-[2rem] bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-300">
+                  <UserPlus size={24} />
+                </div>
+                <span className="text-[10px] md:text-xs font-black text-gray-400">חדש</span>
+              </button>
             </div>
-
-            {error && (
-              <div className="bg-red-50 p-4 rounded-2xl border border-red-100 flex items-center gap-3 text-red-600 animate-fadeIn">
-                <AlertCircle size={20} className="shrink-0" />
-                <p className="text-xs font-black leading-tight">{error}</p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-3 active:scale-95"
-            >
-              {isLogin ? <LogIn size={24} /> : <UserPlus size={24} />}
-              <span className="text-xl">{isLogin ? 'כניסה למערכת' : 'סיום הרשמה'}</span>
-            </button>
-          </form>
-
-          <div className="mt-12 pt-8 border-t border-gray-50 text-center">
-            <button
-              type="button"
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setError('');
-                setPincode('');
-              }}
-              className="text-indigo-600 font-black text-sm hover:text-indigo-800 transition-colors bg-indigo-50 px-6 py-2 rounded-full"
-            >
-              {isLogin ? 'אין לך חשבון? הרשם כאן' : 'כבר רשום? היכנס מכאן'}
-            </button>
           </div>
-        </div>
+        )}
+
+        {view === 'pin' && (
+          <div className="text-center animate-fadeIn">
+            <button onClick={() => Object.keys(allUsers).length > 1 ? setView('profiles') : setView('register')} className="absolute top-6 right-6 text-gray-300 hover:text-indigo-600"><ChevronLeft className="rotate-180" size={24} /></button>
+            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mx-auto mb-4"><ShieldCheck size={32} /></div>
+            <h2 className="text-xl md:text-2xl font-black text-indigo-950 mb-1">הקש קוד גישה</h2>
+            <p className="text-gray-400 text-[9px] font-bold mb-6 truncate max-w-[180px] mx-auto uppercase">{selectedUser}</p>
+            <div className="flex justify-center gap-3 mb-2" dir="ltr">
+              {[0, 1, 2, 3].map(i => <div key={i} className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-300 ${pincode.length > i ? 'bg-indigo-600 border-indigo-600 scale-125' : 'bg-transparent border-gray-200'}`} />)}
+            </div>
+            {error && <p className="text-red-500 text-xs font-black h-4 animate-bounce mb-2">{error}</p>}
+            <Keypad />
+          </div>
+        )}
+
+        {view === 'register' && (
+          <div className="animate-slideUp">
+            <div className="flex justify-center mb-6"><div className="p-4 bg-indigo-600 rounded-[1.5rem] text-white shadow-xl rotate-12"><Heart size={24} className="fill-white" /></div></div>
+            <h2 className="text-2xl font-black text-center text-indigo-950 mb-6">משתמש חדש</h2>
+            <form onSubmit={handleRegister} className="space-y-4">
+              <input type="email" required value={username} onChange={(e) => setUsername(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 border-2 border-transparent focus:border-indigo-500 outline-none font-bold" placeholder="אימייל" />
+              <div className="flex justify-center gap-3" dir="ltr">
+                {[0, 1, 2, 3].map(i => <div key={i} className={`w-10 h-12 rounded-xl flex items-center justify-center font-black text-xl transition-all ${pincode.length > i ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-300'}`}>{pincode[i] || '•'}</div>)}
+              </div>
+              <Keypad />
+              <button type="submit" disabled={pincode.length !== 4 || !username} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl disabled:opacity-30">הרשמה וכניסה</button>
+              {Object.keys(allUsers).length > 0 && <button type="button" onClick={() => setView('profiles')} className="w-full text-center text-[10px] font-black text-indigo-400 mt-4">חזור לפרופילים</button>}
+            </form>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-8 text-center space-y-2 opacity-50 hover:opacity-100 transition-opacity">
+        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2 justify-center">
+          <ShieldCheck size={12} />
+          כל הזכויות שמורות לחברת רובוכיף בע"מ - 0549985605
+        </p>
+        <button 
+          onClick={() => window.open(`https://wa.me/${WHATSAPP_NUMBER}`, '_blank')}
+          className="inline-flex items-center gap-1 text-[10px] font-black text-green-400 hover:text-green-300"
+        >
+          <MessageCircle size={10} />
+          צרו קשר לתמיכה ורכישה
+        </button>
       </div>
     </div>
   );

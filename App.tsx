@@ -8,7 +8,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import AuthScreen from './components/AuthScreen';
 import AdminPanel from './components/AdminPanel';
 import GuestRSVP from './components/GuestRSVP';
-import { Calendar, MapPin, ChevronLeft, CheckCircle2, Cloud, CloudOff, CloudCheck, Server, Clock } from 'lucide-react';
+import { Calendar, MapPin, ChevronLeft, CheckCircle2, Cloud, CloudOff, CloudCheck, Server, Clock, AlertTriangle, RefreshCw, Users, LayoutGrid, Map as MapIcon, Settings, ShieldCheck } from 'lucide-react';
 
 // Firebase Imports
 import { initializeApp, getApps } from 'firebase/app';
@@ -26,7 +26,6 @@ const generateId = () => {
 };
 
 const DEFAULT_CATEGORIES = ['משפחת החתן', 'משפחת הכלה', 'חברי החתן', 'חברי הכלה', 'חברים משותפים', 'משפחה משותפת'];
-const DEFAULT_WHATSAPP_TEMPLATE = `שלום {name}, אנחנו מחכים לראותך ב{eventName}! 🥂\n\n📍 מקומך שמור בשולחן מספר: *{table}*\n🏛️ מיקום: {venue}\n👥 סה"כ מקומות שמורים: {totalSeats}\n\nנתראה בשמחות! ✨`;
 const ADMIN_EMAIL = 'robokeff@gmail.com';
 
 const App: React.FC = () => {
@@ -44,16 +43,14 @@ const App: React.FC = () => {
   const [userIsAdmin, setUserIsAdmin] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'guests' | 'tables' | 'layout' | 'admin' | 'settings'>('dashboard');
-  const [cloudStatus, setCloudStatus] = useState<'offline' | 'connecting' | 'online' | 'api'>('offline');
+  const [cloudStatus, setCloudStatus] = useState<'offline' | 'connecting' | 'online' | 'api' | 'conflict'>('offline');
   
   const dataLoadedForUser = useRef<string | null>(null);
   const dbRef = useRef<any>(null);
   const apiConfigRef = useRef<CustomApiConfig | null>(null);
-
-  const urlParams = new URLSearchParams(window.location.search);
-  const rsvpEventId = urlParams.get('eid');
-  const importDataEncoded = urlParams.get('import');
+  const serverLastUpdated = useRef<string | null>(null);
 
   const initFirebase = useCallback(async (config: FirebaseConfig) => {
     try {
@@ -63,7 +60,6 @@ const App: React.FC = () => {
       setCloudStatus('online');
       return true;
     } catch (e) {
-      console.error("Firebase init failed", e);
       setCloudStatus('offline');
       return false;
     }
@@ -90,203 +86,143 @@ const App: React.FC = () => {
     dbRef.current = null;
   };
 
+  const fetchRemoteData = useCallback(async (userData: UserAccount) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      if (userData.apiConfig) {
+        apiConfigRef.current = userData.apiConfig;
+        const res = await fetch(`${userData.apiConfig.baseUrl}/data`, {
+          headers: { 'Authorization': `Bearer ${userData.apiConfig.apiKey || ''}` },
+          signal: controller.signal
+        });
+        if (res.ok) {
+          const cloudData = await res.json();
+          clearTimeout(timeoutId);
+          serverLastUpdated.current = cloudData.lastUpdated;
+          return cloudData;
+        }
+      }
+      
+      if (userData.cloudConfig && dbRef.current) {
+        const docRef = doc(dbRef.current, 'users', userData.username);
+        const docSnap = await getDoc(docRef);
+        clearTimeout(timeoutId);
+        if (docSnap.exists()) {
+          const cloudData = docSnap.data();
+          serverLastUpdated.current = cloudData.lastUpdated;
+          return cloudData;
+        }
+      }
+    } catch (e) { console.warn("Fetch failed, using local", e); }
+    clearTimeout(timeoutId);
+    return null;
+  }, []);
+
   useEffect(() => {
     if (state.currentUser && !isLoaded) {
       const loadData = async () => {
         try {
           const usersRaw = localStorage.getItem(USERS_DB_KEY);
           const users = usersRaw ? JSON.parse(usersRaw) : {};
-          let userData = users[state.currentUser!];
           
-          if (!userData && state.currentUser === ADMIN_EMAIL) {
-            userData = { username: ADMIN_EMAIL, events: [], isAdmin: true, password: '9985' };
-            users[ADMIN_EMAIL] = userData;
-            localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
+          if (!users[ADMIN_EMAIL]) {
+             users[ADMIN_EMAIL] = { username: ADMIN_EMAIL, events: [], isAdmin: true, password: '9985' };
+             localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
           }
 
+          let userData = users[state.currentUser!];
           if (userData) {
             setUserIsAdmin(!!userData.isAdmin);
+            if (userData.cloudConfig) await initFirebase(userData.cloudConfig);
+            const remoteData = await fetchRemoteData(userData);
             
-            if (userData.apiConfig) {
-              apiConfigRef.current = userData.apiConfig;
-              setCloudStatus('api');
-              try {
-                const res = await fetch(`${userData.apiConfig.baseUrl}/data`, {
-                  headers: { 'Authorization': `Bearer ${userData.apiConfig.apiKey || ''}` }
-                });
-                if (res.ok) {
-                  const cloudData = await res.json();
-                  setEvents(cloudData.events || []);
-                  setState(prev => ({ ...prev, isApiEnabled: true, lastUpdated: new Date().toISOString() }));
-                  dataLoadedForUser.current = state.currentUser;
-                  setIsLoaded(true);
-                  return;
-                }
-              } catch (e) { console.debug("Custom API load failed, fallback to local"); }
+            if (remoteData) {
+              setEvents(remoteData.events || []);
+              setState(prev => ({ 
+                ...prev, 
+                isApiEnabled: !!userData.apiConfig,
+                isCloudEnabled: !!userData.cloudConfig,
+                lastUpdated: remoteData.lastUpdated 
+              }));
+              setCloudStatus(userData.apiConfig ? 'api' : 'online');
+            } else {
+              setEvents(userData.events || []);
+              setState(prev => ({ 
+                ...prev, 
+                isApiEnabled: !!userData.apiConfig,
+                isCloudEnabled: !!userData.cloudConfig,
+                lastUpdated: state.lastUpdated || new Date().toISOString()
+              }));
             }
-
-            if (userData.cloudConfig) {
-              const connected = await initFirebase(userData.cloudConfig);
-              if (connected && dbRef.current) {
-                const docRef = doc(dbRef.current, 'users', state.currentUser!);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                  const cloudData = docSnap.data();
-                  setEvents(cloudData.events || []);
-                  setState(prev => ({ ...prev, isCloudEnabled: true, lastUpdated: cloudData.lastUpdated || new Date().toISOString() }));
-                  dataLoadedForUser.current = state.currentUser;
-                  setIsLoaded(true);
-                  return;
-                }
-              }
-            }
-            
-            setEvents(userData.events || []);
-            setState(prev => ({ 
-              ...prev, 
-              isCloudEnabled: !!userData.cloudConfig,
-              isApiEnabled: !!userData.apiConfig,
-              lastUpdated: new Date().toISOString()
-            }));
-          } else {
-            setEvents([]);
           }
+        } catch (e) { console.error("Load error", e); }
+        finally {
           dataLoadedForUser.current = state.currentUser;
-          setIsLoaded(true);
-        } catch (e) { 
-          console.error("Load error", e); 
           setIsLoaded(true);
         }
       };
       loadData();
     }
-  }, [state.currentUser, isLoaded, initFirebase]);
+  }, [state.currentUser, isLoaded, initFirebase, fetchRemoteData]);
 
   useEffect(() => {
-    if (isLoaded && state.currentUser && importDataEncoded && rsvpEventId) {
-      try {
-        const decodedString = decodeURIComponent(atob(importDataEncoded).split('').map(c => 
-          '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
-        ).join(''));
-        const guestToImport = JSON.parse(decodedString);
-        
-        const eventToUpdate = events.find(e => e.id === rsvpEventId);
-        if (eventToUpdate) {
-          const alreadyExists = eventToUpdate.guests.some(g => 
-            g.name === guestToImport.name && g.phone === guestToImport.phone
-          );
-          
-          if (!alreadyExists) {
-            const updatedEvent = {
-              ...eventToUpdate,
-              guests: [...eventToUpdate.guests, { ...guestToImport, id: generateId() }]
-            };
-            setEvents(prev => prev.map(e => e.id === rsvpEventId ? updatedEvent : e));
-            alert(`אורח חדש נוסף: ${guestToImport.name}. נא לאשר אותו ברשימה.`);
-          }
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      } catch (e) {
-        console.error("Import failed", e);
-      }
-    }
-  }, [isLoaded, state.currentUser, importDataEncoded, rsvpEventId, events]);
+    if (isLoaded) setHasUnsavedChanges(true);
+  }, [events]);
 
   useEffect(() => {
-    if (!isLoaded || !state.currentUser || dataLoadedForUser.current !== state.currentUser) {
-      return; 
-    }
+    if (!isLoaded || !state.currentUser || !hasUnsavedChanges || dataLoadedForUser.current !== state.currentUser) return;
 
     const saveChanges = async () => {
+      if (events.length === 0 && serverLastUpdated.current) return;
       setIsSaving(true);
       const now = new Date().toISOString();
       try {
-        setState(prev => ({ ...prev, lastUpdated: now }));
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...state, lastUpdated: now }));
         localStorage.setItem(LAST_USER_KEY, state.currentUser!);
-        
         const usersRaw = localStorage.getItem(USERS_DB_KEY);
         const users = usersRaw ? JSON.parse(usersRaw) : {};
-        
         if (users[state.currentUser!]) {
           users[state.currentUser!].events = events;
           localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
-          
-          if (state.isApiEnabled && apiConfigRef.current) {
-             await fetch(`${apiConfigRef.current.baseUrl}/save`, {
-               method: 'POST',
-               headers: { 
-                 'Content-Type': 'application/json',
-                 'Authorization': `Bearer ${apiConfigRef.current.apiKey || ''}`
-               },
-               body: JSON.stringify({ events, lastUpdated: now })
-             });
-          }
-
-          if (state.isCloudEnabled && dbRef.current) {
-            const docRef = doc(dbRef.current, 'users', state.currentUser!);
-            await setDoc(docRef, {
-              events: events,
-              lastUpdated: now
-            }, { merge: true });
-          }
         }
-      } catch (e) { 
-        console.error("Save failed", e); 
-      }
-      setTimeout(() => setIsSaving(false), 800);
+
+        if (state.isApiEnabled && apiConfigRef.current) {
+          await fetch(`${apiConfigRef.current.baseUrl}/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfigRef.current.apiKey || ''}` },
+            body: JSON.stringify({ events, lastUpdated: now })
+          });
+        }
+
+        setState(prev => ({ ...prev, lastUpdated: now }));
+        serverLastUpdated.current = now;
+        setCloudStatus(state.isApiEnabled ? 'api' : (state.isCloudEnabled ? 'online' : 'offline'));
+        setHasUnsavedChanges(false);
+      } catch (e) { console.error("Save error", e); }
+      finally { setIsSaving(false); }
     };
 
-    const timer = setTimeout(saveChanges, 1500);
+    const timer = setTimeout(saveChanges, 2000);
     return () => clearTimeout(timer);
-  }, [events, state.currentUser, isLoaded]);
-
-  if (rsvpEventId && !state.currentUser && !importDataEncoded) {
-    const currentEventForRSVP = events.find(e => e.id === rsvpEventId);
-    return <GuestRSVP eventId={rsvpEventId} event={currentEventForRSVP || undefined} />;
-  }
-
-  if (state.showWelcome) return <WelcomeScreen onStart={() => setState(prev => ({ ...prev, showWelcome: false }))} />;
-  if (!state.currentUser) return <AuthScreen onLogin={handleLogin} />;
+  }, [events, state.currentUser, isLoaded, hasUnsavedChanges]);
 
   const currentEvent = events.find(e => e.id === state.currentEventId) || null;
 
-  const createEvent = (name: string, date: string, venue: string, address: string, imageUrl?: string) => {
-    const newEvent: EventData = {
-      id: generateId(),
-      name, date, venue, address, imageUrl,
-      guests: [],
-      categories: [...DEFAULT_CATEGORIES],
-      whatsappTemplate: DEFAULT_WHATSAPP_TEMPLATE,
-      tables: Array.from({ length: 12 }, (_, i) => ({
-        id: generateId(),
-        number: i + 1,
-        capacity: 10,
-        position: { x: (i % 4) * 200 + 50, y: Math.floor(i / 4) * 200 + 50 }
-      }))
-    };
-    setEvents(prev => [...prev, newEvent]);
-    setState(prev => ({ ...prev, currentEventId: newEvent.id }));
-    setActiveTab('guests');
-  };
+  const NavItemMobile = ({ tab, icon: Icon, label }: { tab: any, icon: any, label: string }) => (
+    <button 
+      onClick={() => setActiveTab(tab)}
+      className={`flex flex-col items-center justify-center flex-1 gap-1 transition-all ${activeTab === tab ? 'text-indigo-600 scale-110' : 'text-gray-400'}`}
+    >
+      <div className={`p-1.5 rounded-xl ${activeTab === tab ? 'bg-indigo-50' : 'bg-transparent'}`}>
+        <Icon size={20} strokeWidth={activeTab === tab ? 2.5 : 2} />
+      </div>
+      <span className="text-[10px] font-black">{label}</span>
+    </button>
+  );
 
-  const updateEventMetadata = (id: string, name: string, date: string, venue: string, address: string, imageUrl?: string) => {
-    setEvents(prev => prev.map(e => e.id === id ? { ...e, name, date, venue, address, imageUrl } : e));
-  };
-
-  const updateEvent = (updatedEvent: EventData) => {
-    setEvents(prev => prev.map(e => e.id === updatedEvent.id ? { ...updatedEvent } : e));
-  };
-
-  const deleteEvent = (id: string) => {
-    if (confirm('למחוק את האירוע וכל נתוני ההושבה?')) {
-      setEvents(prev => prev.filter(e => e.id !== id));
-      if (state.currentEventId === id) {
-        setState(prev => ({ ...prev, currentEventId: null }));
-        setActiveTab('dashboard');
-      }
-    }
-  };
+  if (state.showWelcome) return <WelcomeScreen onStart={() => setState(prev => ({ ...prev, showWelcome: false }))} />;
+  if (!state.currentUser) return <AuthScreen onLogin={handleLogin} />;
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-right font-['Assistant']" dir="rtl">
@@ -295,48 +231,70 @@ const App: React.FC = () => {
         hasActiveEvent={!!currentEvent} currentEventName={currentEvent?.name}
         onExitEvent={() => { setState(prev => ({ ...prev, currentEventId: null })); setActiveTab('dashboard'); }}
         onLogout={handleLogout} username={state.currentUser} isAdmin={userIsAdmin} isSaving={isSaving}
-        cloudStatus={cloudStatus}
-        lastUpdated={state.lastUpdated}
+        cloudStatus={cloudStatus} lastUpdated={state.lastUpdated}
       />
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+      
+      <div className="flex-1 flex flex-col h-screen overflow-hidden pb-20 md:pb-0">
         {currentEvent && activeTab !== 'dashboard' && activeTab !== 'admin' && (
-          <header className="bg-white border-b border-gray-100 px-8 py-4 flex justify-between items-center shadow-sm z-20">
-            <div className="flex items-center gap-6">
-              <button onClick={() => { setState(prev => ({ ...prev, currentEventId: null })); setActiveTab('dashboard'); }} className="bg-gray-50 hover:bg-indigo-50 text-indigo-600 p-2 rounded-xl transition-all"><ChevronLeft className="rotate-180" /></button>
-              <div>
-                <h2 className="text-xl font-black text-indigo-950">{currentEvent.name}</h2>
-                <div className="flex gap-4 text-xs font-bold text-gray-400">
-                  <span className="flex items-center gap-1"><Calendar size={12}/>{new Date(currentEvent.date).toLocaleDateString('he-IL')}</span>
-                  <span className="flex items-center gap-1"><MapPin size={12}/>{currentEvent.venue}</span>
+          <header className="bg-white/80 backdrop-blur-md sticky top-0 border-b border-gray-100 px-4 md:px-8 py-4 flex justify-between items-center shadow-sm z-20">
+            <div className="flex items-center gap-3 md:gap-6">
+              <button onClick={() => { setState(prev => ({ ...prev, currentEventId: null })); setActiveTab('dashboard'); }} className="bg-gray-100 hover:bg-indigo-50 text-indigo-600 p-2 rounded-xl transition-all"><ChevronLeft className="rotate-180" size={20} /></button>
+              <div className="overflow-hidden">
+                <h2 className="text-lg md:text-xl font-black text-indigo-950 truncate max-w-[150px] md:max-w-none">{currentEvent.name}</h2>
+                <div className="flex gap-2 md:gap-4 text-[10px] font-bold text-gray-400">
+                  <span className="flex items-center gap-1"><Calendar size={10}/>{new Date(currentEvent.date).toLocaleDateString('he-IL')}</span>
+                  <span className="hidden md:flex items-center gap-1"><MapPin size={10}/>{currentEvent.venue}</span>
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-               {cloudStatus !== 'offline' && state.lastUpdated && (
-                 <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black border border-indigo-100">
-                    <Clock size={12} />
-                    עודכן: {new Date(state.lastUpdated).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+            
+            <div className="flex items-center gap-2">
+               {cloudStatus === 'conflict' ? (
+                 <button onClick={() => window.location.reload()} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 rounded-xl text-[9px] font-black border border-red-100 animate-pulse"><RefreshCw size={12} /> רענן</button>
+               ) : (
+                 <div className={`flex items-center gap-1.5 font-black text-[9px] transition-all duration-500 ${isSaving ? 'text-amber-500' : (hasUnsavedChanges ? 'text-indigo-400' : 'text-green-500 opacity-60')}`}>
+                    {isSaving ? <CheckCircle2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                    <span className="hidden sm:inline">{isSaving ? 'שומר...' : (hasUnsavedChanges ? 'שינויים לא שמורים' : 'מסונכרן')}</span>
                  </div>
                )}
-               <div className={`flex items-center gap-2 font-black text-[10px] transition-all duration-500 ${isSaving ? 'text-amber-500 scale-110' : 'text-green-500 opacity-60'}`}>
-                {isSaving ? <><CheckCircle2 size={14} className="animate-spin" /> שומר...</> : <><CheckCircle2 size={14} /> סונכרן</>}
-              </div>
             </div>
           </header>
         )}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto bg-gray-50/50 custom-scrollbar relative">
+
+        <main className="flex-1 p-3 md:p-8 overflow-y-auto bg-gray-50/50 custom-scrollbar relative">
           {!isLoaded && (
-            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
-              <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p className="font-black text-indigo-900">מאחזר מידע מהשרת...</p>
+            <div className="absolute inset-0 bg-white/90 backdrop-blur-md z-50 flex flex-col items-center justify-center">
+              <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p className="font-black text-indigo-950">טוען את האירועים שלך...</p>
             </div>
           )}
           {activeTab === 'admin' ? <AdminPanel /> : (!currentEvent || activeTab === 'dashboard') ? (
-            <EventDashboard events={events} onCreateEvent={createEvent} onUpdateEventMetadata={updateEventMetadata} onSelectEvent={(id) => { setState(prev => ({ ...prev, currentEventId: id })); setActiveTab('guests'); }} onDeleteEvent={deleteEvent} />
+            <EventDashboard events={events} onCreateEvent={(n,d,v,a,i) => { setEvents(prev => [...prev, { id: generateId(), name: n, date: d, venue: v, address: a, imageUrl: i, guests: [], categories: [...DEFAULT_CATEGORIES], tables: [], elements: [] }]); setActiveTab('guests'); }} onUpdateEventMetadata={(id,n,d,v,a,i) => setEvents(prev => prev.map(e => e.id === id ? {...e, name:n, date:d, venue:v, address:a, imageUrl:i} : e))} onSelectEvent={(id) => { setState(prev => ({ ...prev, currentEventId: id })); setActiveTab('guests'); }} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} />
           ) : (
-            <EventEditor key={currentEvent.id} event={currentEvent} updateEvent={updateEvent} view={activeTab as any} />
+            <EventEditor key={currentEvent.id} event={currentEvent} updateEvent={(updated) => setEvents(prev => prev.map(e => e.id === updated.id ? updated : e))} view={activeTab as any} currentUser={state.currentUser!} />
           )}
         </main>
+      </div>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-100 p-2 flex justify-around items-center z-50 pb-safe">
+        {currentEvent ? (
+          <>
+            <NavItemMobile tab="guests" icon={Users} label="מוזמנים" />
+            <NavItemMobile tab="tables" icon={LayoutGrid} label="שולחנות" />
+            <NavItemMobile tab="layout" icon={MapIcon} label="סקיצה" />
+            <NavItemMobile tab="settings" icon={Settings} label="הגדרות" />
+          </>
+        ) : (
+          <>
+            <NavItemMobile tab="dashboard" icon={Calendar} label="אירועים" />
+            {userIsAdmin && <NavItemMobile tab="admin" icon={ShieldCheck} label="ניהול" />}
+            <button onClick={handleLogout} className="flex flex-col items-center justify-center flex-1 gap-1 text-red-400">
+               <Clock size={20} />
+               <span className="text-[10px] font-black">התנתק</span>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
