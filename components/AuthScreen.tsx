@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Heart, UserCircle2, ShieldCheck, Delete, ChevronLeft, MessageCircle } from 'lucide-react';
+import { UserPlus, Heart, UserCircle2, ShieldCheck, Delete, ChevronLeft } from 'lucide-react';
 import { UserAccount } from '../types';
 
 interface AuthScreenProps {
@@ -19,7 +19,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   const LAST_USER_KEY = 'last_logged_user_v3';
   const ADMIN_EMAIL = 'robokeff@gmail.com';
   const ADMIN_PASS = '9985';
-  const WHATSAPP_NUMBER = '972549985605';
 
   const loadUsers = () => {
     const usersRaw = localStorage.getItem(USERS_DB_KEY);
@@ -33,10 +32,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   };
 
   useEffect(() => {
-    const users = loadUsers();
-    const userList = Object.keys(users);
-    if (userList.length === 1) { setSelectedUser(userList[0]); setView('pin'); }
-    else { setView('profiles'); }
+    loadUsers();
+    setView('profiles');
   }, []);
 
   const handlePinInput = (num: string) => {
@@ -91,11 +88,13 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   return (
     <div className="min-h-screen bg-indigo-950 flex flex-col items-center justify-center p-4 font-['Assistant']" dir="rtl">
       <div className="bg-white rounded-[2.5rem] md:rounded-[3.5rem] shadow-2xl w-full max-w-md p-6 md:p-10 overflow-hidden relative animate-fadeIn border-t-8 border-indigo-600">
+        
         {view === 'profiles' && (
           <div className="text-center animate-slideUp">
             <h2 className="text-2xl md:text-3xl font-black text-indigo-950 mb-8">בחר פרופיל</h2>
+            
             <div className="grid grid-cols-2 gap-4 md:gap-6 mb-6">
-              {Object.keys(allUsers).map(u => (
+              {Object.keys(allUsers).filter(u => u !== ADMIN_EMAIL).slice(0, 3).map(u => (
                 <button key={u} onClick={() => { setSelectedUser(u); setView('pin'); setPincode(''); }} className="flex flex-col items-center gap-3 group">
                   <div className="w-20 h-20 md:w-24 md:h-24 rounded-[1.5rem] md:rounded-[2rem] bg-indigo-50 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
                     <UserCircle2 size={40} />
@@ -110,12 +109,19 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 <span className="text-[10px] md:text-xs font-black text-gray-400">חדש</span>
               </button>
             </div>
+            
+            <div className="mt-8 pt-8 border-t border-gray-100">
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">ניהול מנהל</p>
+              <button onClick={() => { setSelectedUser(ADMIN_EMAIL); setView('pin'); setPincode(''); }} className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-50 text-indigo-600 rounded-2xl font-black text-xs hover:bg-indigo-100">
+                כניסת מנהל מערכת
+              </button>
+            </div>
           </div>
         )}
 
         {view === 'pin' && (
           <div className="text-center animate-fadeIn">
-            <button onClick={() => Object.keys(allUsers).length > 1 ? setView('profiles') : setView('register')} className="absolute top-6 right-6 text-gray-300 hover:text-indigo-600"><ChevronLeft className="rotate-180" size={24} /></button>
+            <button onClick={() => setView('profiles')} className="absolute top-6 right-6 text-gray-300 hover:text-indigo-600"><ChevronLeft className="rotate-180" size={24} /></button>
             <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mx-auto mb-4"><ShieldCheck size={32} /></div>
             <h2 className="text-xl md:text-2xl font-black text-indigo-950 mb-1">הקש קוד גישה</h2>
             <p className="text-gray-400 text-[9px] font-bold mb-6 truncate max-w-[180px] mx-auto uppercase">{selectedUser}</p>
@@ -129,6 +135,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
 
         {view === 'register' && (
           <div className="animate-slideUp">
+            <button onClick={() => setView('profiles')} className="absolute top-6 right-6 text-gray-300 hover:text-indigo-600"><ChevronLeft className="rotate-180" size={24} /></button>
             <div className="flex justify-center mb-6"><div className="p-4 bg-indigo-600 rounded-[1.5rem] text-white shadow-xl rotate-12"><Heart size={24} className="fill-white" /></div></div>
             <h2 className="text-2xl font-black text-center text-indigo-950 mb-6">משתמש חדש</h2>
             <form onSubmit={handleRegister} className="space-y-4">
@@ -138,7 +145,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               </div>
               <Keypad />
               <button type="submit" disabled={pincode.length !== 4 || !username} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl disabled:opacity-30">הרשמה וכניסה</button>
-              {Object.keys(allUsers).length > 0 && <button type="button" onClick={() => setView('profiles')} className="w-full text-center text-[10px] font-black text-indigo-400 mt-4">חזור לפרופילים</button>}
             </form>
           </div>
         )}
@@ -149,13 +155,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
           <ShieldCheck size={12} />
           כל הזכויות שמורות לחברת רובוכיף בע"מ - 0549985605
         </p>
-        <button 
-          onClick={() => window.open(`https://wa.me/${WHATSAPP_NUMBER}`, '_blank')}
-          className="inline-flex items-center gap-1 text-[10px] font-black text-green-400 hover:text-green-300"
-        >
-          <MessageCircle size={10} />
-          צרו קשר לתמיכה ורכישה
-        </button>
       </div>
     </div>
   );

@@ -12,20 +12,12 @@ interface SidebarProps {
   username: string;
   isAdmin?: boolean;
   isSaving?: boolean;
-  cloudStatus?: 'offline' | 'connecting' | 'online' | 'api' | 'conflict';
   lastUpdated?: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, hasActiveEvent, onLogout, username, isAdmin, cloudStatus, lastUpdated }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, hasActiveEvent, onLogout, username, isAdmin, lastUpdated }) => {
   const WHATSAPP_NUMBER = '972549985605';
   
-  const getStatusText = () => {
-    if (cloudStatus === 'conflict') return 'גרסה חדשה בשרת!';
-    if (cloudStatus === 'online') return 'מחובר לענן';
-    if (cloudStatus === 'api') return 'מסונכרן לשרת';
-    return 'עבודה מקומית';
-  };
-
   return (
     <aside className="w-64 bg-indigo-950 text-white flex flex-col hidden md:flex sticky top-0 h-screen shadow-2xl z-30 border-l border-white/5">
       <div className="p-6 border-b border-indigo-900">
@@ -49,15 +41,15 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, hasActiveEve
         
         <div className="mt-4 px-1 flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${cloudStatus === 'conflict' ? 'bg-red-500 animate-pulse' : (cloudStatus !== 'offline' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-400')}`}></div>
-            <span className={`text-[9px] font-black uppercase tracking-widest ${cloudStatus === 'conflict' ? 'text-red-400' : 'text-indigo-200'}`}>
-              {getStatusText()}
+            <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+            <span className="text-[9px] font-black uppercase tracking-widest text-indigo-200">
+              עבודה מקומית בטוחה
             </span>
           </div>
           {lastUpdated && (
              <div className="flex items-center gap-1.5 text-[9px] text-indigo-400 font-bold">
                 <Clock size={10} />
-                סנכרון אחרון: {new Date(lastUpdated).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                שמירה אחרונה: {new Date(lastUpdated).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
              </div>
           )}
         </div>
@@ -66,7 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, hasActiveEve
       <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto custom-scrollbar">
         <NavItem active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={Calendar} label="האירועים שלי" />
         
-        {isAdmin && <NavItem active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={ShieldCheck} label="ניהול מערכת" />}
+        {isAdmin && <NavItem active={activeTab === 'admin'} onClick={() => setActiveTab('admin'} icon={ShieldCheck} label="ניהול מערכת" />}
 
         {hasActiveEvent && (
           <div className="pt-4 space-y-1">

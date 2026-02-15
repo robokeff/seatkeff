@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Guest, Table } from '../types';
-import { Plus, UserPlus, Search, Trash2, CheckCircle2, Users, Clock, MessageCircle, AlertCircle, Phone, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, UserPlus, Search, Trash2, CheckCircle2, Users, Clock, MessageCircle, Edit2, Split, X, Save, Send } from 'lucide-react';
 
 interface GuestListProps {
   eventId: string;
@@ -9,184 +9,214 @@ interface GuestListProps {
   tables: Table[];
   eventName: string;
   eventVenue: string;
-  eventAddress?: string;
-  eventImageUrl?: string;
+  eventDate: string;
   categories: string[];
-  whatsappTemplate?: string;
+  seatingTemplate?: string;
   onAddGuest: (guest: Omit<Guest, 'id'>) => void;
   onRemoveGuest: (id: string) => void;
   onUpdateGuest: (id: string, updates: Partial<Guest>) => void;
   onSplitGuest: (originalId: string, splitData: { adults: number; children: number }) => void;
 }
 
-const COLOR_PALETTE = ['#3b82f6', '#ec4899', '#6366f1', '#f43f5e', '#22c55e', '#a855f7', '#f59e0b', '#14b8a6'];
+const GUEST_COLORS = [
+  '#4f46e5', '#ec4899', '#f59e0b', '#10b981', '#0ea5e9', 
+  '#8b5cf6', '#f43f5e', '#14b8a6', '#f97316', '#06b6d4'
+];
 
 const GuestList: React.FC<GuestListProps> = ({ 
-  guests, tables, eventName, eventVenue, categories, whatsappTemplate,
-  onAddGuest, onRemoveGuest, onUpdateGuest 
+  guests, tables, eventName, eventVenue, eventDate, categories, seatingTemplate,
+  onAddGuest, onRemoveGuest, onUpdateGuest, onSplitGuest
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusTab, setStatusTab] = useState<'ALL' | 'CONFIRMED' | 'PENDING'>('ALL');
   const [newName, setNewName] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [newCat, setNewCat] = useState<string>(categories[0] || '');
   const [newAdults, setNewAdults] = useState(1);
   const [newChildren, setNewChildren] = useState(0);
 
-  const filteredGuests = guests.filter(g => {
-    const matchesSearch = g.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusTab === 'ALL' || (statusTab === 'CONFIRMED' ? g.confirmed : !g.confirmed);
-    return matchesSearch && matchesStatus;
-  });
+  const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+  const [splittingGuest, setSplittingGuest] = useState<Guest | null>(null);
+  const [splitAdults, setSplitAdults] = useState(0);
+  const [splitChildren, setSplitChildren] = useState(0);
 
-  const confirmedCount = guests.filter(g => g.confirmed).reduce((sum, g) => sum + g.adults + g.children, 0);
-  const pendingCount = guests.filter(g => !g.confirmed).length;
+  const filteredGuests = guests.filter(g => g.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (newName.trim()) {
-      onAddGuest({
-        name: newName, phone: newPhone.trim() || undefined,
-        category: newCat || categories[0], adults: newAdults, children: newChildren,
-        tableId: null, confirmed: false,
-        color: COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)]
+      const randomColor = GUEST_COLORS[Math.floor(Math.random() * GUEST_COLORS.length)];
+      onAddGuest({ 
+        name: newName, 
+        category: categories[0], 
+        adults: newAdults, 
+        children: newChildren, 
+        tableId: null, 
+        confirmed: false, 
+        color: randomColor 
       });
-      setNewName(''); setNewPhone(''); setNewAdults(1); setNewChildren(0);
+      setNewName(''); setNewAdults(1); setNewChildren(0);
     }
   };
 
-  const sendWhatsApp = (guest: Guest) => {
-    if (!guest.phone) return;
-    const tableNum = tables.find(t => t.id === guest.tableId)?.number || 'טרם נקבע';
-    const total = guest.adults + guest.children;
-    const message = (whatsappTemplate || '')
-      .replace(/{name}/g, guest.name).replace(/{eventName}/g, eventName)
-      .replace(/{venue}/g, eventVenue).replace(/{table}/g, tableNum.toString())
-      .replace(/{totalSeats}/g, total.toString());
-    window.open(`https://wa.me/${guest.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+  const handleSendSeating = (guest: Guest) => {
+    const table = tables.find(t => t.id === guest.tableId);
+    const tableNum = table ? table.number.toString() : 'טרם נקבע';
+    const totalSeats = guest.adults + guest.children;
+    
+    // ניסיון למצוא את כתובת האירוע מהנתונים הגלובליים או מהקונטקסט
+    // מאחר ו-GuestList לא מקבל את האובייקט המלא של EventData, נחפש דרך seatingTemplate או נשתמש ב-Waze link אם יש כתובת
+    const currentEvent = JSON.parse(localStorage.getItem('users_db_v3') || '{}');
+    let address = '';
+    Object.values(currentEvent).forEach((u: any) => {
+      const ev = u.events?.find((e: any) => e.name === eventName && e.venue === eventVenue);
+      if (ev?.address) address = ev.address;
+    });
+
+    let message = seatingTemplate || "היי [GUEST_NAME], מחכים לראותכם ב-[EVENT_NAME]! שולחן: [TABLE_NUMBER], כמות מקומות: [SEATS].";
+    
+    if (address) {
+      message += `\n\n📍 הוראות הגעה ב-Waze:\nhttps://waze.com/ul?q=${encodeURIComponent(address)}`;
+    }
+
+    message = message
+      .replace('[GUEST_NAME]', guest.name)
+      .replace('[EVENT_NAME]', eventName)
+      .replace('[TABLE_NUMBER]', tableNum)
+      .replace('[SEATS]', totalSeats.toString())
+      .replace('[EVENT_VENUE]', eventVenue)
+      .replace('[EVENT_ADDRESS]', address)
+      .replace('[EVENT_DATE]', new Date(eventDate).toLocaleDateString('he-IL'));
+
+    window.open(`https://wa.me/${guest.phone?.replace(/\D/g, '') || ''}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  const handleSplit = () => {
+    if (splittingGuest && (splitAdults > 0 || splitChildren > 0)) {
+      onSplitGuest(splittingGuest.id, { adults: splitAdults, children: splitChildren });
+      setSplittingGuest(null); setSplitAdults(0); setSplitChildren(0);
+    }
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 md:space-y-8 animate-fadeIn pb-10">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
-        <div className="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-3 md:gap-4 col-span-1">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Users size={20} /></div>
-          <div><p className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase">מוזמנים</p><p className="text-xl md:text-3xl font-black text-indigo-950">{guests.reduce((s,g)=>s+g.adults+g.children,0)}</p></div>
-        </div>
-        <div className="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-3 md:gap-4 col-span-1">
-          <div className="p-3 bg-green-50 text-green-600 rounded-xl"><CheckCircle2 size={20} /></div>
-          <div><p className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase">מאושרים</p><p className="text-xl md:text-3xl font-black text-green-600">{confirmedCount}</p></div>
-        </div>
-        <div className="hidden md:flex bg-white p-6 rounded-3xl shadow-sm border border-gray-100 items-center gap-4">
-          <div className="p-3 bg-amber-50 text-amber-600 rounded-xl"><Clock size={20} /></div>
-          <div><p className="text-[10px] font-black text-gray-400 uppercase">ממתינים</p><p className="text-3xl font-black text-amber-600">{pendingCount}</p></div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 md:gap-8">
-        <div className="lg:col-span-1">
-          <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-gray-100">
-            <h3 className="text-lg font-black text-indigo-950 mb-6 flex items-center gap-2"><UserPlus size={20} className="text-indigo-600" />הוספת מוזמן</h3>
+    <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn pb-20">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div className="md:col-span-1">
+          <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100 sticky top-4">
+            <h3 className="text-lg font-black text-indigo-950 mb-6 flex items-center gap-2"><UserPlus size={20} className="text-indigo-600" /> הוספה מהירה</h3>
             <form onSubmit={handleAdd} className="space-y-4">
-              <input type="text" value={newName} required onChange={(e) => setNewName(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 outline-none font-bold" placeholder="שם האורח" />
-              <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 outline-none text-left font-bold" placeholder="טלפון" dir="ltr" />
-              <div className="grid grid-cols-2 gap-3">
-                <input type="number" min="1" value={newAdults} onChange={(e) => setNewAdults(parseInt(e.target.value) || 1)} className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 font-black text-center" placeholder="מבוגרים" />
-                <input type="number" min="0" value={newChildren} onChange={(e) => setNewChildren(parseInt(e.target.value) || 0)} className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 font-black text-center" placeholder="ילדים" />
+              <input type="text" value={newName} required onChange={(e) => setNewName(e.target.value)} className="w-full px-4 py-3 rounded-2xl bg-gray-50 font-bold outline-none" placeholder="שם מוזמן" />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-gray-400 mr-1 uppercase">מבוגרים</span>
+                  <input type="number" min="1" value={newAdults} onChange={(e) => setNewAdults(parseInt(e.target.value) || 1)} className="w-full p-3 rounded-2xl bg-gray-50 text-center font-black" />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-gray-400 mr-1 uppercase">ילדים</span>
+                  <input type="number" min="0" value={newChildren} onChange={(e) => setNewChildren(parseInt(e.target.value) || 0)} className="w-full p-3 rounded-2xl bg-gray-50 text-center font-black" />
+                </div>
               </div>
-              <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-all">הוסף לרשימה</button>
+              <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">הוסף</button>
             </form>
           </div>
         </div>
 
-        <div className="lg:col-span-3 space-y-4">
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            <div className="flex bg-white p-1 rounded-2xl w-full md:w-auto shadow-sm border border-gray-100">
-              <button onClick={() => setStatusTab('ALL')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-[10px] font-black ${statusTab === 'ALL' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400'}`}>הכל</button>
-              <button onClick={() => setStatusTab('CONFIRMED')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-[10px] font-black ${statusTab === 'CONFIRMED' ? 'bg-green-500 text-white shadow-md' : 'text-gray-400'}`}>מאושרים</button>
-              <button onClick={() => setStatusTab('PENDING')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-[10px] font-black ${statusTab === 'PENDING' ? 'bg-amber-500 text-white shadow-md' : 'text-gray-400'}`}>ממתינים</button>
-            </div>
-            <div className="relative w-full md:w-64">
-              <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
-              <input type="text" placeholder="חיפוש לפי שם..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pr-10 pl-5 py-3 rounded-2xl bg-white border border-gray-100 font-bold text-sm shadow-sm" />
-            </div>
+        <div className="md:col-span-3 space-y-4">
+          <div className="relative">
+            <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+            <input type="text" placeholder="חיפוש מוזמנים..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pr-12 pl-5 py-4 rounded-3xl bg-white border border-gray-100 font-bold shadow-sm" />
           </div>
 
-          {/* Desktop Table */}
-          <div className="hidden md:block bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
-            <table className="w-full text-right text-sm">
-              <thead className="bg-gray-50/50 text-gray-400 font-black text-[10px] uppercase">
+          <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden overflow-x-auto custom-scrollbar">
+            <table className="w-full text-right text-sm min-w-[600px]">
+              <thead className="bg-gray-50 text-gray-400 font-black text-[10px] uppercase">
                 <tr>
                   <th className="px-6 py-5">מוזמן</th>
-                  <th className="px-6 py-5 text-center">נפשות</th>
+                  <th className="px-4 py-5 text-center">נפשות</th>
                   <th className="px-6 py-5 text-center">שולחן</th>
                   <th className="px-6 py-5 text-center">סטטוס</th>
-                  <th className="px-8 py-5 text-left">פעולות</th>
+                  <th className="px-6 py-5 text-left">פעולות</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filteredGuests.map(guest => (
-                  <tr key={guest.id} className="hover:bg-indigo-50/30 transition-colors group">
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: guest.color }} />
-                        <span className="font-black text-indigo-950">{guest.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-5 text-center font-black text-indigo-900">{guest.adults + guest.children}</td>
-                    <td className="px-6 py-5 text-center">
-                      {guest.tableId ? <span className="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-[9px] font-black">שולחן {tables.find(t=>t.id===guest.tableId)?.number}</span> : <span className="text-gray-300 italic text-[10px]">טרם נקבע</span>}
-                    </td>
-                    <td className="px-6 py-5 text-center">
-                      <button onClick={() => onUpdateGuest(guest.id, { confirmed: !guest.confirmed })} className={`px-4 py-2 rounded-2xl text-[10px] font-black transition-all ${guest.confirmed ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-500 hover:bg-amber-100'}`}>
-                        {guest.confirmed ? 'מאושר' : 'ממתין'}
-                      </button>
-                    </td>
-                    <td className="px-8 py-5 text-left opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="flex justify-end gap-1">
-                        {guest.phone && <button onClick={() => sendWhatsApp(guest)} className="text-green-500 p-2 hover:bg-green-50 rounded-xl"><MessageCircle size={18} /></button>}
-                        <button onClick={() => onRemoveGuest(guest.id)} className="text-red-400 p-2 hover:bg-red-50 rounded-xl"><Trash2 size={18} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredGuests.map(guest => {
+                  const table = tables.find(t => t.id === guest.tableId);
+                  return (
+                    <tr key={guest.id} className="hover:bg-indigo-50/20 transition-colors group">
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: guest.color }} />
+                          <div className="flex flex-col">
+                            <span className="font-black text-indigo-950">{guest.name}</span>
+                            <span className="text-[10px] text-gray-400 font-bold">{guest.category}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-5 text-center">
+                        <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-black text-xs">
+                          {guest.adults + guest.children}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 text-center">
+                         {table ? <span className="font-black text-indigo-600">#{table.number}</span> : <span className="text-gray-300 text-xs">לא שובץ</span>}
+                      </td>
+                      <td className="px-6 py-5 text-center">
+                        <button onClick={() => onUpdateGuest(guest.id, { confirmed: !guest.confirmed })} className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-all ${guest.confirmed ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-500'}`}>
+                          {guest.confirmed ? 'מאושר' : 'ממתין'}
+                        </button>
+                      </td>
+                      <td className="px-6 py-5 text-left opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex justify-end gap-1">
+                          <button onClick={() => handleSendSeating(guest)} title="שלח שיבוץ" className="p-2 text-green-500 hover:bg-green-50 rounded-lg"><Send size={18} /></button>
+                          <button onClick={() => setSplittingGuest(guest)} title="פיצול" className="p-2 text-indigo-400 hover:bg-indigo-50 rounded-lg"><Split size={18} /></button>
+                          <button onClick={() => setEditingGuest(guest)} title="עריכה" className="p-2 text-gray-400 hover:bg-gray-50 rounded-lg"><Edit2 size={18} /></button>
+                          <button onClick={() => onRemoveGuest(guest.id)} title="מחיקה" className="p-2 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={18} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-
-          {/* Mobile Card List */}
-          <div className="md:hidden space-y-3">
-            {filteredGuests.map(guest => (
-              <div key={guest.id} className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex justify-between items-center transition-all active:scale-[0.98]">
-                <div className="flex items-center gap-4">
-                  <div className="w-2 h-10 rounded-full" style={{ backgroundColor: guest.color }} />
-                  <div>
-                    <p className="font-black text-indigo-950 text-base">{guest.name}</p>
-                    <p className="text-[10px] font-bold text-gray-400">
-                      {guest.adults + guest.children} נפשות {guest.tableId && `• שולחן ${tables.find(t=>t.id===guest.tableId)?.number}`}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => onUpdateGuest(guest.id, { confirmed: !guest.confirmed })} className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${guest.confirmed ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}`}>
-                    <CheckCircle2 size={20} />
-                  </button>
-                  {guest.phone && (
-                    <button onClick={() => sendWhatsApp(guest)} className="w-10 h-10 bg-green-50 text-green-500 rounded-2xl flex items-center justify-center">
-                      <Phone size={18} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          {filteredGuests.length === 0 && (
-            <div className="py-20 text-center"><p className="text-gray-300 font-black">לא נמצאו מוזמנים</p></div>
-          )}
         </div>
       </div>
+
+      {editingGuest && (
+        <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-slideUp">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-indigo-950 flex items-center gap-2"><Edit2 size={20} /> עריכת מוזמן</h2>
+              <button onClick={() => setEditingGuest(null)}><X className="text-gray-300 hover:text-red-500" /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-black text-gray-400 mr-1 uppercase">שם מוזמן</label>
+                <input type="text" className="w-full p-4 rounded-2xl bg-gray-50 font-bold outline-none border-2 border-transparent focus:border-indigo-500" value={editingGuest.name} onChange={e => setEditingGuest({...editingGuest, name: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-gray-400 mr-1 uppercase">טלפון</label>
+                <input type="tel" className="w-full p-4 rounded-2xl bg-gray-50 font-bold outline-none text-left" value={editingGuest.phone || ''} onChange={e => setEditingGuest({...editingGuest, phone: e.target.value})} placeholder="050-0000000" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-black text-gray-400 mr-1 uppercase">מבוגרים</label>
+                  <input type="number" className="w-full p-4 rounded-2xl bg-gray-50 font-black text-center" value={editingGuest.adults} onChange={e => setEditingGuest({...editingGuest, adults: parseInt(e.target.value) || 0})} />
+                </div>
+                <div>
+                  <label className="text-xs font-black text-gray-400 mr-1 uppercase">ילדים</label>
+                  <input type="number" className="w-full p-4 rounded-2xl bg-gray-50 font-black text-center" value={editingGuest.children} onChange={e => setEditingGuest({...editingGuest, children: parseInt(e.target.value) || 0})} />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                 {GUEST_COLORS.map(color => (
+                   <button key={color} onClick={() => setEditingGuest({...editingGuest, color})} className={`w-8 h-8 rounded-full border-2 ${editingGuest.color === color ? 'border-indigo-600 scale-110' : 'border-transparent'}`} style={{ backgroundColor: color }} />
+                 ))}
+              </div>
+              <button onClick={() => { onUpdateGuest(editingGuest.id, editingGuest); setEditingGuest(null); }} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl mt-4">
+                <Save size={20} /> שמור שינויים
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

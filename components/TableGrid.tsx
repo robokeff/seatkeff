@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Guest, Table } from '../types';
-import { Plus, Trash2, Users, ChevronDown, UserCheck, Search, Baby, User, Download } from 'lucide-react';
+import { Plus, Trash2, Users, ChevronDown, UserCheck, Search, Edit2, X, Save, Tag } from 'lucide-react';
 
 interface TableGridProps {
   tables: Table[];
@@ -11,18 +11,30 @@ interface TableGridProps {
   onRemoveTable: (id: string) => void;
   onUpdateTable: (id: string, updates: Partial<Table>) => void;
   onAssignGuest: (guestId: string, tableId: string | null) => void;
-  onExport?: () => void;
 }
 
-const TableGrid: React.FC<TableGridProps> = ({ tables, guests, categories, onAddTable, onRemoveTable, onUpdateTable, onAssignGuest }) => {
+const TableGrid: React.FC<TableGridProps> = ({ tables, guests, onAddTable, onRemoveTable, onUpdateTable, onAssignGuest }) => {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [editingTable, setEditingTable] = useState<Table | null>(null);
 
   const getTableGuests = (tableId: string) => guests.filter(g => g.tableId === tableId);
   const unassignedGuests = guests.filter(g => !g.tableId && g.confirmed && g.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
+  const handleUpdateTableSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingTable) {
+      onUpdateTable(editingTable.id, { 
+        number: editingTable.number, 
+        capacity: editingTable.capacity,
+        name: editingTable.name?.trim() || undefined
+      });
+      setEditingTable(null);
+    }
+  };
+
   return (
-    <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-8">
+    <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-8 pb-10">
       <div className="flex-1 space-y-8 animate-fadeIn">
         <header className="flex justify-between items-center">
           <div><h2 className="text-2xl font-black text-indigo-950">סידור שולחנות</h2><p className="text-gray-500">שבץ אורחים לפי הקבוצות שלהם</p></div>
@@ -37,16 +49,24 @@ const TableGrid: React.FC<TableGridProps> = ({ tables, guests, categories, onAdd
             const isSelected = selectedTableId === table.id;
             return (
               <div key={table.id} onClick={() => setSelectedTableId(isSelected ? null : table.id)} className={`bg-white rounded-[2rem] p-6 shadow-sm border-2 transition-all cursor-pointer relative overflow-hidden group ${isSelected ? 'border-indigo-500 ring-4 ring-indigo-50' : 'border-transparent hover:border-indigo-100'}`}>
-                <div className="flex justify-between items-start mb-4">
-                  <div><span className="text-xs font-black text-indigo-300 uppercase">שולחן</span><h3 className="text-3xl font-black text-indigo-900 leading-none">#{table.number}</h3></div>
-                  <button onClick={(e) => { e.stopPropagation(); onRemoveTable(table.id); }} className="p-2 text-gray-200 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={18} /></button>
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-indigo-300 uppercase">שולחן {table.number}</span>
+                    {table.name && <h3 className="text-lg font-black text-indigo-950 leading-tight bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">{table.name}</h3>}
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={(e) => { e.stopPropagation(); setEditingTable(table); }} className="p-2 text-gray-200 hover:text-indigo-600 transition-colors opacity-0 group-hover:opacity-100"><Edit2 size={18} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); onRemoveTable(table.id); }} className="p-2 text-gray-200 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={18} /></button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 mb-4">
+                
+                <div className="flex items-center gap-3 mb-4 mt-2">
                   <div className="flex-1 bg-gray-100 h-2.5 rounded-full overflow-hidden">
                     <div className={`h-full transition-all duration-500 ${isFull ? 'bg-red-400' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, (occupiedSeats / table.capacity) * 100)}%` }} />
                   </div>
                   <span className={`text-[10px] font-black ${isFull ? 'text-red-500' : 'text-gray-400'}`}>{occupiedSeats}/{table.capacity}</span>
                 </div>
+
                 <div className="space-y-1.5 mb-4 max-h-48 overflow-y-auto custom-scrollbar pr-1">
                   {tableGuests.map(g => (
                     <div key={g.id} className="flex justify-between items-center bg-gray-50 border-r-4 px-3 py-2 rounded-xl text-[11px] animate-fadeIn" style={{ borderRightColor: g.color || '#cbd5e1' }}>
@@ -92,6 +112,36 @@ const TableGrid: React.FC<TableGridProps> = ({ tables, guests, categories, onAdd
           </div>
         </div>
       </div>
+
+      {editingTable && (
+        <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl animate-slideUp text-right">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-indigo-950 flex items-center gap-2"><Edit2 size={20} /> עריכת שולחן</h2>
+              <button onClick={() => setEditingTable(null)}><X className="text-gray-300 hover:text-red-500" /></button>
+            </div>
+            <form onSubmit={handleUpdateTableSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-black text-gray-400 uppercase mr-1">שם השולחן (אופציונלי)</label>
+                <input type="text" placeholder="למשל: משפחת כהן המורחבת" className="w-full px-5 py-4 rounded-2xl bg-gray-50 font-bold outline-none border-2 border-transparent focus:border-indigo-500" value={editingTable.name || ''} onChange={e => setEditingTable({...editingTable, name: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase mr-1">מספר</label>
+                  <input type="number" min="1" className="w-full p-4 rounded-2xl bg-gray-50 font-black text-xl text-center" value={editingTable.number} onChange={e => setEditingTable({...editingTable, number: parseInt(e.target.value) || 0})} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase mr-1">קיבולת</label>
+                  <input type="number" min="1" className="w-full p-4 rounded-2xl bg-gray-50 font-black text-xl text-center" value={editingTable.capacity} onChange={e => setEditingTable({...editingTable, capacity: parseInt(e.target.value) || 0})} />
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl">
+                <Save size={20} /> שמור הגדרות
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

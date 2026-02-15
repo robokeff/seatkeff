@@ -1,17 +1,19 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { EventData, AppState, UserAccount, CustomApiConfig } from './types';
+import React, { useState, useEffect, useRef } from 'react';
+import { EventData, AppState, UserAccount, HallTemplate, Guest } from './types';
 import EventDashboard from './components/EventDashboard';
 import EventEditor from './components/EventEditor';
 import Sidebar from './components/Sidebar';
 import WelcomeScreen from './components/WelcomeScreen';
 import AuthScreen from './components/AuthScreen';
 import AdminPanel from './components/AdminPanel';
-import { Calendar, MapPin, ChevronLeft, CheckCircle2, Clock, RefreshCw, Users, LayoutGrid, Map as MapIcon, Settings, ShieldCheck } from 'lucide-react';
+import GuestRSVP from './components/GuestRSVP';
+import { Calendar, MapPin, ChevronLeft, CheckCircle2, Clock, Users, LayoutGrid, Map as MapIcon, Settings, ShieldCheck, LogOut, CheckCircle } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'event_seat_pro_config_v3';
 const USERS_DB_KEY = 'users_db_v3';
 const LAST_USER_KEY = 'last_logged_user_v3';
+const GLOBAL_CONFIG_KEY = 'global_config_v3';
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -20,18 +22,30 @@ const generateId = () => {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 };
 
+const safeAtob = (str: string) => {
+  try {
+    return decodeURIComponent(atob(str).split('').map((c) => {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+  } catch (e) {
+    return atob(str);
+  }
+};
+
 const DEFAULT_CATEGORIES = ['משפחת החתן', 'משפחת הכלה', 'חברי החתן', 'חברי הכלה', 'חברים משותפים', 'משפחה משותפת'];
-const ADMIN_EMAIL = 'robokeff@gmail.com';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
       const lastUser = localStorage.getItem(LAST_USER_KEY);
       if (lastUser) return { currentUser: lastUser, currentEventId: null, showWelcome: false };
     } catch (e) {
-      console.warn("Storage parse error", e);
+      console.warn("Storage initial parse error", e);
     }
     return { currentUser: null, currentEventId: null, showWelcome: true };
   });
@@ -40,13 +54,112 @@ const App: React.FC = () => {
   const [userIsAdmin, setUserIsAdmin] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'guests' | 'tables' | 'layout' | 'admin' | 'settings'>('dashboard');
-  const [cloudStatus, setCloudStatus] = useState<'offline' | 'connecting' | 'online' | 'api' | 'conflict'>('offline');
   
+  const [isRSVPMode, setIsRSVPMode] = useState(false);
+  const [rsvpEventId, setRsvpEventId] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+
   const dataLoadedForUser = useRef<string | null>(null);
-  const apiConfigRef = useRef<CustomApiConfig | null>(null);
-  const serverLastUpdated = useRef<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const rsvp = params.get('rsvp');
+    const importData = params.get('import');
+    const eid = params.get('eid');
+
+    if (rsvp) {
+      setIsRSVPMode(true);
+      setRsvpEventId(rsvp);
+    }
+
+    if (importData && eid) {
+      try {
+        const decoded = JSON.parse(safeAtob(importData));
+        handleImportGuest(eid, decoded);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (e) {
+        console.error("Failed to import guest data", e);
+      }
+    }
+  }, []);
+
+  const handleImportGuest = (eventId: string, guestData: any) => {
+    setImportNotice(`מייבא את ${guestData.name}...`);
+    
+    setEvents(prev => prev.map(ev => {
+      if (ev.id === eventId) {
+        return {
+          ...ev,
+          guests: [...ev.guests, { ...guestData, id: generateId() }]
+        };
+      }
+      return ev;
+    }));
+
+    setTimeout(() => {
+      setImportNotice(`המוזמן ${guestData.name} נוסף בהצלחה!`);
+      setTimeout(() => setImportNotice(null), 2000);
+    }, 500);
+  };
+
+  const handleImportFullEvent = (event: EventData) => {
+    setEvents(prev => [...prev, event]);
+    setImportNotice(`אירוע דוגמא נטען בהצלחה!`);
+    setTimeout(() => setImportNotice(null), 2000);
+  };
+
+  useEffect(() => {
+    if (state.currentUser && dataLoadedForUser.current !== state.currentUser) {
+      setIsLoaded(false);
+      try {
+        const usersRaw = localStorage.getItem(USERS_DB_KEY);
+        const users = usersRaw ? JSON.parse(usersRaw) : {};
+        const userData = users[state.currentUser!];
+        if (userData) {
+          setUserIsAdmin(!!userData.isAdmin);
+          setEvents(userData.events || []);
+        } else {
+          setEvents([]);
+          setUserIsAdmin(false);
+        }
+      } catch (e) { 
+        console.error("Local load error", e); 
+      } finally {
+        dataLoadedForUser.current = state.currentUser;
+        setIsLoaded(true);
+      }
+    } else if (!state.currentUser) {
+      setEvents([]);
+      setIsLoaded(true);
+      dataLoadedForUser.current = null;
+    }
+  }, [state.currentUser]);
+
+  useEffect(() => {
+    if (!isLoaded || !state.currentUser || dataLoadedForUser.current !== state.currentUser) return;
+
+    const saveChanges = () => {
+      setIsSaving(true);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
+        localStorage.setItem(LAST_USER_KEY, state.currentUser!);
+        const usersRaw = localStorage.getItem(USERS_DB_KEY);
+        const users = usersRaw ? JSON.parse(usersRaw) : {};
+        if (!users[state.currentUser!]) {
+          users[state.currentUser!] = { username: state.currentUser!, events: [], isAdmin: userIsAdmin };
+        }
+        users[state.currentUser!].events = events;
+        localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
+      } catch (e: any) { 
+        console.error("Save error", e); 
+      } finally { 
+        setIsSaving(false); 
+      }
+    };
+    const timer = setTimeout(saveChanges, 800); 
+    return () => clearTimeout(timer);
+  }, [events, state.currentUser, isLoaded, userIsAdmin]);
 
   const handleLogin = (username: string) => {
     const normalizedUsername = username.trim().toLowerCase();
@@ -65,131 +178,7 @@ const App: React.FC = () => {
     setActiveTab('dashboard');
     setEvents([]);
     setUserIsAdmin(false);
-    setCloudStatus('offline');
-    apiConfigRef.current = null;
   };
-
-  const fetchRemoteData = useCallback(async (userData: UserAccount) => {
-    if (!userData.apiConfig || !userData.apiConfig.baseUrl) return null;
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    try {
-      apiConfigRef.current = userData.apiConfig;
-      const res = await fetch(`${userData.apiConfig.baseUrl}/data`, {
-        headers: { 
-          'Authorization': `Bearer ${userData.apiConfig.apiKey || ''}`,
-          'Accept': 'application/json'
-        },
-        signal: controller.signal
-      });
-      if (res.ok) {
-        const cloudData = await res.json();
-        clearTimeout(timeoutId);
-        serverLastUpdated.current = cloudData.lastUpdated;
-        return cloudData;
-      }
-    } catch (e) { 
-      console.warn("Neon API fetch failed, falling back to local storage", e); 
-    }
-    clearTimeout(timeoutId);
-    return null;
-  }, []);
-
-  useEffect(() => {
-    if (state.currentUser && !isLoaded) {
-      const loadData = async () => {
-        try {
-          const usersRaw = localStorage.getItem(USERS_DB_KEY);
-          const users = usersRaw ? JSON.parse(usersRaw) : {};
-          
-          if (!users[ADMIN_EMAIL]) {
-             users[ADMIN_EMAIL] = { username: ADMIN_EMAIL, events: [], isAdmin: true, password: '9985' };
-             localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
-          }
-
-          let userData = users[state.currentUser!];
-          if (userData) {
-            setUserIsAdmin(!!userData.isAdmin);
-            const remoteData = await fetchRemoteData(userData);
-            
-            if (remoteData) {
-              setEvents(remoteData.events || []);
-              setState(prev => ({ 
-                ...prev, 
-                isApiEnabled: !!userData.apiConfig,
-                lastUpdated: remoteData.lastUpdated 
-              }));
-              setCloudStatus('api');
-            } else {
-              setEvents(userData.events || []);
-              setState(prev => ({ 
-                ...prev, 
-                isApiEnabled: !!userData.apiConfig,
-                lastUpdated: state.lastUpdated || new Date().toISOString()
-              }));
-              setCloudStatus(userData.apiConfig ? 'api' : 'offline');
-            }
-          }
-        } catch (e) { 
-          console.error("Local load error", e); 
-        } finally {
-          dataLoadedForUser.current = state.currentUser;
-          setIsLoaded(true);
-        }
-      };
-      loadData();
-    }
-  }, [state.currentUser, isLoaded, fetchRemoteData, state.lastUpdated]);
-
-  useEffect(() => {
-    if (isLoaded) setHasUnsavedChanges(true);
-  }, [events, isLoaded]);
-
-  useEffect(() => {
-    if (!isLoaded || !state.currentUser || !hasUnsavedChanges || dataLoadedForUser.current !== state.currentUser) return;
-
-    const saveChanges = async () => {
-      // Don't save empty state if we previously had data from server
-      if (events.length === 0 && serverLastUpdated.current) return;
-      
-      setIsSaving(true);
-      const now = new Date().toISOString();
-      try {
-        localStorage.setItem(LAST_USER_KEY, state.currentUser!);
-        const usersRaw = localStorage.getItem(USERS_DB_KEY);
-        const users = usersRaw ? JSON.parse(usersRaw) : {};
-        if (users[state.currentUser!]) {
-          users[state.currentUser!].events = events;
-          localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
-        }
-
-        if (state.isApiEnabled && apiConfigRef.current) {
-          await fetch(`${apiConfigRef.current.baseUrl}/save`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json', 
-              'Authorization': `Bearer ${apiConfigRef.current.apiKey || ''}` 
-            },
-            body: JSON.stringify({ events, lastUpdated: now })
-          });
-        }
-
-        setState(prev => ({ ...prev, lastUpdated: now }));
-        serverLastUpdated.current = now;
-        setCloudStatus(state.isApiEnabled ? 'api' : 'offline');
-        setHasUnsavedChanges(false);
-      } catch (e) { 
-        console.error("API Save error (Neon)", e); 
-      } finally { 
-        setIsSaving(false); 
-      }
-    };
-
-    const timer = setTimeout(saveChanges, 2000);
-    return () => clearTimeout(timer);
-  }, [events, state.currentUser, isLoaded, hasUnsavedChanges, state.isApiEnabled]);
 
   const currentEvent = events.find(e => e.id === state.currentEventId) || null;
 
@@ -205,17 +194,24 @@ const App: React.FC = () => {
     </button>
   );
 
+  if (isRSVPMode) return <GuestRSVP eventId={rsvpEventId || ''} event={events.find(e => e.id === rsvpEventId)} />;
   if (state.showWelcome) return <WelcomeScreen onStart={() => setState(prev => ({ ...prev, showWelcome: false }))} />;
   if (!state.currentUser) return <AuthScreen onLogin={handleLogin} />;
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-right font-['Assistant']" dir="rtl">
+      {importNotice && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[200] bg-white border-2 border-green-500 text-green-600 px-8 py-4 rounded-[2rem] shadow-2xl flex items-center gap-3 animate-slideUp font-black">
+          <CheckCircle size={24} />
+          {importNotice}
+        </div>
+      )}
       <Sidebar 
         activeTab={activeTab} setActiveTab={setActiveTab} 
         hasActiveEvent={!!currentEvent} currentEventName={currentEvent?.name}
         onExitEvent={() => { setState(prev => ({ ...prev, currentEventId: null })); setActiveTab('dashboard'); }}
         onLogout={handleLogout} username={state.currentUser} isAdmin={userIsAdmin} isSaving={isSaving}
-        cloudStatus={cloudStatus} lastUpdated={state.lastUpdated}
+        lastUpdated={state.lastUpdated}
       />
       
       <div className="flex-1 flex flex-col h-screen overflow-hidden pb-20 md:pb-0">
@@ -231,29 +227,76 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-            
             <div className="flex items-center gap-2">
-               {cloudStatus === 'conflict' ? (
-                 <button onClick={() => window.location.reload()} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 rounded-xl text-[9px] font-black border border-red-100 animate-pulse"><RefreshCw size={12} /> רענן</button>
-               ) : (
-                 <div className={`flex items-center gap-1.5 font-black text-[9px] transition-all duration-500 ${isSaving ? 'text-amber-500' : (hasUnsavedChanges ? 'text-indigo-400' : 'text-green-500 opacity-60')}`}>
-                    {isSaving ? <RefreshCw size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
-                    <span className="hidden sm:inline">{isSaving ? 'מסנכרן ל-Neon...' : (hasUnsavedChanges ? 'שינויים מקומיים' : 'מסונכרן')}</span>
+                 <div className={`flex items-center gap-1.5 font-black text-[9px] transition-all duration-500 ${isSaving ? 'text-amber-500' : 'text-green-500 opacity-60'}`}>
+                    {isSaving ? <span className="animate-spin text-lg">◌</span> : <CheckCircle2 size={12} />}
+                    <span className="hidden sm:inline">{isSaving ? 'שומר שינויים...' : 'שמור מקומית'}</span>
                  </div>
-               )}
             </div>
           </header>
         )}
 
         <main className="flex-1 p-3 md:p-8 overflow-y-auto bg-gray-50/50 custom-scrollbar relative">
-          {!isLoaded && (
-            <div className="absolute inset-0 bg-white/90 backdrop-blur-md z-50 flex flex-col items-center justify-center">
-              <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p className="font-black text-indigo-950">מתחבר למסד הנתונים...</p>
-            </div>
-          )}
           {activeTab === 'admin' ? <AdminPanel /> : (!currentEvent || activeTab === 'dashboard') ? (
-            <EventDashboard events={events} onCreateEvent={(n,d,v,a,i) => { setEvents(prev => [...prev, { id: generateId(), name: n, date: d, venue: v, address: a, imageUrl: i, guests: [], categories: [...DEFAULT_CATEGORIES], tables: [], elements: [] }]); setActiveTab('guests'); }} onUpdateEventMetadata={(id,n,d,v,a,i) => setEvents(prev => prev.map(e => e.id === id ? {...e, name:n, date:d, venue:v, address:a, imageUrl:i} : e))} onSelectEvent={(id) => { setState(prev => ({ ...prev, currentEventId: id })); setActiveTab('guests'); }} onDeleteEvent={(id) => setEvents(prev => prev.filter(e => e.id !== id))} />
+            <EventDashboard 
+              events={events} 
+              onImportEvent={handleImportFullEvent}
+              onCreateEvent={(n,d,v,t_topic,a,i, templateId) => { 
+                const globalRaw = localStorage.getItem(GLOBAL_CONFIG_KEY);
+                const globalCats = globalRaw ? JSON.parse(globalRaw).categories : DEFAULT_CATEGORIES;
+                
+                let tables = [];
+                let elements = [];
+                let width = 1000;
+                let height = 1000;
+                
+                if (templateId) {
+                  const usersRaw = localStorage.getItem(USERS_DB_KEY);
+                  const users = usersRaw ? JSON.parse(usersRaw) : {};
+                  let foundTemplate: HallTemplate | null = null;
+                  Object.values(users).forEach((u: any) => {
+                    const t = u.hallTemplates?.find((temp: any) => temp.id === templateId);
+                    if (t) foundTemplate = t;
+                  });
+                  if (foundTemplate) {
+                    tables = (foundTemplate as any).tables.map((t: any) => ({ ...t, id: generateId() }));
+                    elements = (foundTemplate as any).elements || [];
+                    width = (foundTemplate as any).width || 1000;
+                    height = (foundTemplate as any).height || 1000;
+                  }
+                }
+
+                const newEvent: EventData = { 
+                  id: generateId(), 
+                  name: n, 
+                  date: d, 
+                  venue: v, 
+                  eventTopic: t_topic,
+                  address: a, 
+                  imageUrl: i, 
+                  guests: [], 
+                  categories: globalCats || [...DEFAULT_CATEGORIES], 
+                  tables, 
+                  elements,
+                  canvasWidth: width,
+                  canvasHeight: height,
+                  seatingTemplate: "היי [GUEST_NAME]! אנחנו שמחים להזמינכם ל-[EVENT_NAME]. שולחן מספר [TABLE_NUMBER], כמות מקומות: [SEATS]. נתראה ב-[EVENT_VENUE] בכתובת [EVENT_ADDRESS]!"
+                };
+                setEvents(prev => [...prev, newEvent]); 
+                setState(prev => ({ ...prev, currentEventId: newEvent.id }));
+                setActiveTab('guests'); 
+              }} 
+              onUpdateEventMetadata={(id,n,d,v,t_topic,a,i) => setEvents(prev => prev.map(e => e.id === id ? {...e, name:n, date:d, venue:v, eventTopic: t_topic, address:a, imageUrl:i} : e))} 
+              onSelectEvent={(id) => { 
+                setState(prev => ({ ...prev, currentEventId: id })); 
+                setActiveTab('guests'); 
+              }} 
+              onDeleteEvent={(id) => {
+                if(confirm('האם אתה בטוח שברצונך למחוק את האירוע? כל הנתונים יאבדו.')) {
+                  setEvents(prev => prev.filter(e => e.id !== id));
+                }
+              }} 
+            />
           ) : (
             <EventEditor key={currentEvent.id} event={currentEvent} updateEvent={(updated) => setEvents(prev => prev.map(e => e.id === updated.id ? updated : e))} view={activeTab as any} currentUser={state.currentUser!} />
           )}
@@ -273,7 +316,7 @@ const App: React.FC = () => {
             <NavItemMobile tab="dashboard" icon={Calendar} label="אירועים" />
             {userIsAdmin && <NavItemMobile tab="admin" icon={ShieldCheck} label="ניהול" />}
             <button onClick={handleLogout} className="flex flex-col items-center justify-center flex-1 gap-1 text-red-400">
-               <Clock size={20} />
+               <LogOut size={20} />
                <span className="text-[10px] font-black">התנתק</span>
             </button>
           </>

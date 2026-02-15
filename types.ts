@@ -10,7 +10,7 @@ export interface Guest {
   children: number;
   tableId: string | null;
   confirmed: boolean;
-  color?: string;
+  color: string;
 }
 
 export interface Table {
@@ -20,7 +20,8 @@ export interface Table {
   name?: string;
   position: { x: number; y: number };
   rotation?: number;
-  type: 'round' | 'rectangular' | 'long';
+  type: 'round' | 'rectangular' | 'square';
+  color?: string;
 }
 
 export type HallElementType = 'stage' | 'dance_floor' | 'bar' | 'buffet' | 'entrance' | 'dj' | 'wall' | 'plant';
@@ -32,13 +33,14 @@ export interface HallElement {
   position: { x: number; y: number };
   size: { width: number; height: number };
   rotation?: number;
+  color?: string;
 }
 
 export interface HallTemplate {
   id: string;
   name: string;
-  createdBy: string; // username
-  tables: Omit<Table, 'id'>[]; // Template tables don't need guests assigned
+  createdBy: string;
+  tables: Omit<Table, 'id'>[]; 
   elements: HallElement[];
   width: number;
   height: number;
@@ -49,19 +51,24 @@ export interface EventData {
   name: string;
   date: string;
   venue: string;
+  eventTopic: string;
   address?: string;
   imageUrl?: string;
   guests: Guest[];
   tables: Table[];
-  elements: HallElement[]; // Custom elements for this specific event
+  elements: HallElement[]; 
   categories: string[];
-  whatsappTemplate?: string;
-  hallTemplateId?: string;
+  seatingTemplate?: string;
+  canvasWidth: number;
+  canvasHeight: number;
+  customRsvpUrl?: string; // שדה חדש לניהול קישור מותאם
 }
 
-export interface CustomApiConfig {
-  baseUrl: string;
-  apiKey?: string;
+export interface AppState {
+  currentUser: string | null;
+  currentEventId: string | null;
+  showWelcome: boolean;
+  lastUpdated?: string;
 }
 
 export interface UserAccount {
@@ -70,13 +77,4 @@ export interface UserAccount {
   events: EventData[];
   hallTemplates?: HallTemplate[];
   isAdmin?: boolean;
-  apiConfig?: CustomApiConfig;
-}
-
-export interface AppState {
-  currentUser: string | null;
-  currentEventId: string | null;
-  showWelcome: boolean;
-  isApiEnabled?: boolean;
-  lastUpdated?: string;
 }
