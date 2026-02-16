@@ -51,6 +51,7 @@ const App: React.FC = () => {
   });
 
   const [events, setEvents] = useState<EventData[]>([]);
+  const [allTemplates, setAllTemplates] = useState<HallTemplate[]>([]);
   const [userIsAdmin, setUserIsAdmin] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -109,6 +110,7 @@ const App: React.FC = () => {
     setTimeout(() => setImportNotice(null), 2000);
   };
 
+  // טעינת נתונים ראשונית כולל תבניות
   useEffect(() => {
     if (state.currentUser && dataLoadedForUser.current !== state.currentUser) {
       setIsLoaded(false);
@@ -116,6 +118,14 @@ const App: React.FC = () => {
         const usersRaw = localStorage.getItem(USERS_DB_KEY);
         const users = usersRaw ? JSON.parse(usersRaw) : {};
         const userData = users[state.currentUser!];
+        
+        // טעינת כל התבניות מכל המשתמשים (כדי שיהיו גלובליות)
+        const templates: HallTemplate[] = [];
+        Object.values(users).forEach((u: any) => {
+          if (u.hallTemplates) templates.push(...u.hallTemplates);
+        });
+        setAllTemplates(templates);
+
         if (userData) {
           setUserIsAdmin(!!userData.isAdmin);
           setEvents(userData.events || []);
@@ -131,11 +141,13 @@ const App: React.FC = () => {
       }
     } else if (!state.currentUser) {
       setEvents([]);
+      setAllTemplates([]);
       setIsLoaded(true);
       dataLoadedForUser.current = null;
     }
   }, [state.currentUser]);
 
+  // שמירה מרכזית של אירועים ותבניות
   useEffect(() => {
     if (!isLoaded || !state.currentUser || dataLoadedForUser.current !== state.currentUser) return;
 
@@ -144,12 +156,21 @@ const App: React.FC = () => {
       try {
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
         localStorage.setItem(LAST_USER_KEY, state.currentUser!);
+        
         const usersRaw = localStorage.getItem(USERS_DB_KEY);
         const users = usersRaw ? JSON.parse(usersRaw) : {};
+        
         if (!users[state.currentUser!]) {
-          users[state.currentUser!] = { username: state.currentUser!, events: [], isAdmin: userIsAdmin };
+          users[state.currentUser!] = { username: state.currentUser!, events: [], isAdmin: userIsAdmin, hallTemplates: [] };
         }
+        
+        // עדכון אירועים למשתמש הנוכחי
         users[state.currentUser!].events = events;
+        
+        // וידוא שהתבניות של המשתמש הנוכחי נשמרות (אלו שנוצרו על ידו)
+        const myTemplates = allTemplates.filter(t => t.createdBy === state.currentUser);
+        users[state.currentUser!].hallTemplates = myTemplates;
+
         localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
       } catch (e: any) { 
         console.error("Save error", e); 
@@ -159,7 +180,7 @@ const App: React.FC = () => {
     };
     const timer = setTimeout(saveChanges, 800); 
     return () => clearTimeout(timer);
-  }, [events, state.currentUser, isLoaded, userIsAdmin]);
+  }, [events, allTemplates, state.currentUser, isLoaded, userIsAdmin]);
 
   const handleLogin = (username: string) => {
     const normalizedUsername = username.trim().toLowerCase();
@@ -177,7 +198,19 @@ const App: React.FC = () => {
     localStorage.removeItem(LAST_USER_KEY);
     setActiveTab('dashboard');
     setEvents([]);
+    setAllTemplates([]);
     setUserIsAdmin(false);
+  };
+
+  const handleSaveTemplate = (template: HallTemplate) => {
+    setAllTemplates(prev => {
+      // אם התבנית כבר קיימת (לפי שם או מזהה), נעדכן אותה. אם לא, נוסיף.
+      const exists = prev.find(t => t.id === template.id);
+      if (exists) {
+        return prev.map(t => t.id === template.id ? template : t);
+      }
+      return [...prev, template];
+    });
   };
 
   const currentEvent = events.find(e => e.id === state.currentEventId) || null;
@@ -240,6 +273,7 @@ const App: React.FC = () => {
           {activeTab === 'admin' ? <AdminPanel /> : (!currentEvent || activeTab === 'dashboard') ? (
             <EventDashboard 
               events={events} 
+              availableTemplates={allTemplates}
               onImportEvent={handleImportFullEvent}
               onCreateEvent={(n,d,v,t_topic,a,i, templateId) => { 
                 const globalRaw = localStorage.getItem(GLOBAL_CONFIG_KEY);
@@ -251,18 +285,12 @@ const App: React.FC = () => {
                 let height = 1000;
                 
                 if (templateId) {
-                  const usersRaw = localStorage.getItem(USERS_DB_KEY);
-                  const users = usersRaw ? JSON.parse(usersRaw) : {};
-                  let foundTemplate: HallTemplate | null = null;
-                  Object.values(users).forEach((u: any) => {
-                    const t = u.hallTemplates?.find((temp: any) => temp.id === templateId);
-                    if (t) foundTemplate = t;
-                  });
+                  const foundTemplate = allTemplates.find(temp => temp.id === templateId);
                   if (foundTemplate) {
-                    tables = (foundTemplate as any).tables.map((t: any) => ({ ...t, id: generateId() }));
-                    elements = (foundTemplate as any).elements || [];
-                    width = (foundTemplate as any).width || 1000;
-                    height = (foundTemplate as any).height || 1000;
+                    tables = foundTemplate.tables.map((t: any) => ({ ...t, id: generateId() }));
+                    elements = foundTemplate.elements || [];
+                    width = foundTemplate.width || 1000;
+                    height = foundTemplate.height || 1000;
                   }
                 }
 
@@ -298,7 +326,15 @@ const App: React.FC = () => {
               }} 
             />
           ) : (
-            <EventEditor key={currentEvent.id} event={currentEvent} updateEvent={(updated) => setEvents(prev => prev.map(e => e.id === updated.id ? updated : e))} view={activeTab as any} currentUser={state.currentUser!} />
+            <EventEditor 
+              key={currentEvent.id} 
+              event={currentEvent} 
+              updateEvent={(updated) => setEvents(prev => prev.map(e => e.id === updated.id ? updated : e))} 
+              view={activeTab as any} 
+              currentUser={state.currentUser!}
+              allTemplates={allTemplates}
+              onSaveTemplate={handleSaveTemplate}
+            />
           )}
         </main>
       </div>

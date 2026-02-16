@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { EventData, Guest, Table, HallElement, HallTemplate } from '../types';
 import GuestList from './GuestList';
 import TableGrid from './TableGrid';
@@ -11,22 +11,11 @@ interface EventEditorProps {
   updateEvent: (event: EventData) => void;
   view: 'guests' | 'tables' | 'layout' | 'settings';
   currentUser: string;
+  allTemplates: HallTemplate[];
+  onSaveTemplate: (template: HallTemplate) => void;
 }
 
-const USERS_DB_KEY = 'users_db_v3';
-
-const EventEditor: React.FC<EventEditorProps> = ({ event, updateEvent, view, currentUser }) => {
-  const [savedTemplates, setSavedTemplates] = useState<HallTemplate[]>([]);
-
-  useEffect(() => {
-    const usersRaw = localStorage.getItem(USERS_DB_KEY);
-    if (usersRaw) {
-      const users = JSON.parse(usersRaw);
-      const allTemplates: HallTemplate[] = [];
-      Object.values(users).forEach((u: any) => { if (u.hallTemplates) allTemplates.push(...u.hallTemplates); });
-      setSavedTemplates(allTemplates);
-    }
-  }, []);
+const EventEditor: React.FC<EventEditorProps> = ({ event, updateEvent, view, currentUser, allTemplates, onSaveTemplate }) => {
 
   const updateGuest = (id: string, updates: Partial<Guest>) => {
     updateEvent({ ...event, guests: event.guests.map(g => g.id === id ? { ...g, ...updates } : g) });
@@ -82,7 +71,7 @@ const EventEditor: React.FC<EventEditorProps> = ({ event, updateEvent, view, cur
     updateEvent({ ...event, elements: (event.elements || []).filter(e => e.id !== id) });
   };
 
-  const saveAsTemplate = (name: string, width: number, height: number) => {
+  const handleSaveAsTemplate = (name: string, width: number, height: number) => {
     const newTemplate: HallTemplate = {
       id: crypto.randomUUID(),
       name,
@@ -92,16 +81,7 @@ const EventEditor: React.FC<EventEditorProps> = ({ event, updateEvent, view, cur
       width,
       height
     };
-    const usersRaw = localStorage.getItem(USERS_DB_KEY);
-    if (usersRaw) {
-      const users = JSON.parse(usersRaw);
-      if (users[currentUser]) {
-        if (!users[currentUser].hallTemplates) users[currentUser].hallTemplates = [];
-        users[currentUser].hallTemplates.push(newTemplate);
-        localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
-        setSavedTemplates(prev => [...prev, newTemplate]);
-      }
-    }
+    onSaveTemplate(newTemplate);
   };
 
   const loadTemplate = (template: HallTemplate) => {
@@ -154,10 +134,10 @@ const EventEditor: React.FC<EventEditorProps> = ({ event, updateEvent, view, cur
           onUpdateElement={updateElement} 
           onRemoveElement={removeElement} 
           onRemoveTable={removeTable} 
-          onSaveTemplate={saveAsTemplate} 
+          onSaveTemplate={handleSaveAsTemplate} 
           onLoadTemplate={loadTemplate} 
           onUpdateDimensions={updateDimensions} 
-          savedTemplates={savedTemplates} 
+          savedTemplates={allTemplates} 
         />
       )}
       {view === 'settings' && <SettingsPanel event={event} onUpdateEvent={updateEvent} />}

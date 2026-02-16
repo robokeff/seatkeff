@@ -1,14 +1,15 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { EventData, HallTemplate, Guest, Table, HallElement } from '../types';
 import { 
-  Plus, Calendar, MapPin, Trash2, ArrowLeft, Edit2, ShieldCheck, Navigation, 
-  ImageIcon, Upload, X, Layout, PlayCircle, Share2, MessageCircle, Copy, Check,
+  Plus, Calendar, MapPin, Trash2, ArrowLeft, Edit2, ShieldCheck, 
+  ImageIcon, X, Layout, PlayCircle, Share2, MessageCircle, Copy, Check,
   Heart, Star, Music, PartyPopper, Cake
 } from 'lucide-react';
 
 interface EventDashboardProps {
   events: EventData[];
+  availableTemplates: HallTemplate[];
   onCreateEvent: (name: string, date: string, venue: string, topic: string, address: string, imageUrl?: string, templateId?: string) => void;
   onUpdateEventMetadata: (id: string, name: string, date: string, venue: string, topic: string, address: string, imageUrl?: string) => void;
   onSelectEvent: (id: string) => void;
@@ -33,6 +34,7 @@ const GUEST_COLORS = [
 
 const EventDashboard: React.FC<EventDashboardProps> = ({ 
   events, 
+  availableTemplates,
   onCreateEvent, 
   onUpdateEventMetadata,
   onSelectEvent, 
@@ -48,24 +50,11 @@ const EventDashboard: React.FC<EventDashboardProps> = ({
   const [formAddress, setFormAddress] = useState('');
   const [formImageUrl, setFormImageUrl] = useState('');
   const [formTemplateId, setFormTemplateId] = useState('');
-  const [availableTemplates, setAvailableTemplates] = useState<HallTemplate[]>([]);
   
   const [sharingEvent, setSharingEvent] = useState<EventData | null>(null);
   const [copied, setCopied] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const usersRaw = localStorage.getItem('users_db_v3');
-    if (usersRaw) {
-      const users = JSON.parse(usersRaw);
-      const templates: HallTemplate[] = [];
-      Object.values(users).forEach((u: any) => {
-        if (u.hallTemplates) templates.push(...u.hallTemplates);
-      });
-      setAvailableTemplates(templates);
-    }
-  }, [showModal]);
 
   const generateDemoEvent = () => {
     const eventId = crypto.randomUUID();
